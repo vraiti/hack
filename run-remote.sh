@@ -181,6 +181,20 @@ ssh "$SSH_ALIAS" "mkdir -p $(printf '%q' "$REMOTE_ROOT")"
 # this machine explicitly; without one, use CWD.
 PROJECT_DIR="${PROFILE_LOCAL_HOME:-$PWD}"
 
+# ~/.local/hack (this toolset) is always treated as a push-only repo (see
+# sync-remote.sh's push_repo_and_submodules), regardless of whether any
+# profile's `sync` map mentions it -- remote-side scripts that live under a
+# checkout of this repo are expected to `git pull` their own copy, and that
+# pull is only safe once origin actually has whatever's committed locally.
+HACK_DIR="$HOME/.local/hack"
+if [[ -e "$HACK_DIR/.git" ]]; then
+    if [[ -n "$(git -C "$HACK_DIR" status --porcelain)" ]]; then
+        echo "ERROR: $HACK_DIR has uncommitted changes" >&2
+        exit 1
+    fi
+    git -C "$HACK_DIR" push
+fi
+
 if [[ -n "$PROFILE_NAME" ]]; then
     bash "$SCRIPT_DIR/sync-remote.sh" "$SSH_ALIAS" "$REMOTE_ROOT" "$PROJECT_DIR" --profile "$PROFILE_NAME"
 else
@@ -202,22 +216,6 @@ AUX_DIR="$PROJECT_DIR/vllm-omni-aux"
 
 REMOTE_CMD="$1"
 shift
-if [[ "$REMOTE_CMD" != /* ]]; then
-    # A command relative to vllm-omni-aux (the common case: deploy scripts)
-    # keeps its historical vllm-omni-aux-anchored remote path; anything else
-    # relative is instead resolved against the whole project dir (e.g. a
-    # tool like d3g/d3g-postprocess that isn't under vllm-omni-aux at all).
-    if [[ -f "$AUX_DIR/$REMOTE_CMD" ]]; then
-        REMOTE_CMD="$REMOTE_ROOT/vllm-omni-aux/$REMOTE_CMD"
-    elif [[ -f "$PROJECT_DIR/$REMOTE_CMD" ]]; then
-        REMOTE_CMD="$REMOTE_ROOT/$REMOTE_CMD"
-    else
-        echo "ERROR: '$REMOTE_CMD' not found under $AUX_DIR or $PROJECT_DIR" >&2
-        exit 1
-    fi
-fi
-
-ssh "$SSH_ALIAS" "mkdir -p /opt/dlami/nvme/huggingface; mkdir -p /opt/dlami/nvme/uv"
 
 HF_TOKEN=$(cat ~/.secret/hf)
 

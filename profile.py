@@ -15,7 +15,7 @@ VALID_SYNC_LABELS = {"default", "site-package", "push-only"}
 PROFILE_DIR = Path.home() / ".local" / "run-remote"
 
 SINGULAR_KEYS = {"venv", "host", "home", "local-home"}
-REPEATABLE_KEYS = {"env", "sync", "include", "dependency"}
+REPEATABLE_KEYS = {"env", "sync", "include", "dependency", "command"}
 VALID_KEYS = SINGULAR_KEYS | REPEATABLE_KEYS
 
 CREATE_USAGE = (
@@ -31,7 +31,8 @@ CREATE_USAGE = (
     "  dependency=DIR:UPSTREAM_DIR:HOOK\n"
     "                         Rebuild DIR with HOOK (a shell command) whenever\n"
     "                         UPSTREAM_DIR's HEAD moves (repeatable/comma-separated)\n"
-    "  -- CMD [args...]       Default remote command"
+    "  command=ARG            Default remote command argv element (repeatable/comma-separated)\n"
+    "  -- CMD [args...]       Default remote command (overrides command=)"
 )
 
 
@@ -184,8 +185,13 @@ def build_own(kv_tokens, command):
         own["home"] = singular["home"]
     if singular.get("local-home"):
         own["local-home"] = singular["local-home"]
+    # `-- CMD args...` wins over `command=` if both are given, since it's
+    # the more explicit form (and can express args containing commas, which
+    # command= can't since it splits on them).
     if command:
         own["command"] = command
+    elif repeatable["command"]:
+        own["command"] = repeatable["command"]
     if repeatable["sync"]:
         own["sync"] = build_sync(repeatable["sync"])
     if repeatable["dependency"]:
