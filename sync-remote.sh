@@ -11,6 +11,7 @@ set -euo pipefail
 # without a profile.
 ARGS=()
 PROFILE_NAME=""
+EXTRA_ENTRIES=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --profile)
@@ -19,6 +20,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --profile=*)
             PROFILE_NAME="${1#--profile=}"
+            shift
+            ;;
+        --extra)
+            EXTRA_ENTRIES+=("$2")
+            shift 2
+            ;;
+        --extra=*)
+            EXTRA_ENTRIES+=("${1#--extra=}")
             shift
             ;;
         *)
@@ -68,6 +77,25 @@ if [[ "$HAVE_PROFILE_SYNC" -eq 0 ]]; then
     mapfile -t ENTRIES < "$REPOS_FILE"
 fi
 
+# --extra NAME[:LABEL] (repeatable) appends entries on top of whatever the
+# profile/repos.txt resolved, for repos a caller wants synced unconditionally
+# regardless of what's in either -- e.g. run-remote.sh always adds its own
+# toolset this way. NAME may be an absolute path (see resolve_repo_dir
+# below); it doesn't have to live under PROJECT_DIR like profile/repos.txt
+# entries do.
+ENTRIES+=("${EXTRA_ENTRIES[@]}")
+
+# A plain entry name is relative to PROJECT_DIR, same as always; an absolute
+# NAME (as --extra can supply) is used as-is.
+resolve_repo_dir() {
+    local repo_name="$1"
+    if [[ "$repo_name" == /* ]]; then
+        echo "$repo_name"
+    else
+        echo "$PROJECT_DIR/$repo_name"
+    fi
+}
+
 # Auto-commit any uncommitted changes in a repo (and its initialized
 # submodules, recursively) rather than refusing to proceed -- run-remote's
 # workflow is edit-locally-then-sync, so a dirty tree just means "not
@@ -103,7 +131,7 @@ for entry in "${ENTRIES[@]}"; do
     entry="${entry// /}"
     [[ -z "$entry" ]] && continue
     repo_name="${entry%%:*}"
-    repo_dir="$PROJECT_DIR/$repo_name"
+    repo_dir="$(resolve_repo_dir "$repo_name")"
     [[ -e "$repo_dir/.git" ]] || continue
     auto_commit_tree "$repo_dir"
 done
@@ -200,7 +228,11 @@ for entry in "${ENTRIES[@]}"; do
     repo_name="${entry%%:*}"
     label=""
     [[ "$entry" == *:* ]] && label="${entry#*:}"
-    repo_dir="$PROJECT_DIR/$repo_name"
+    repo_dir="$(resolve_repo_dir "$repo_name")"
+    # An absolute repo_name (e.g. from --extra) would otherwise put literal
+    # "/" in the log filename below, which mkdir/redirect can't create as a
+    # single path component.
+    log_name="${repo_name//\//_}"
 
     if [[ ! -d "$repo_dir" ]]; then
         echo "WARNING: $repo_dir does not exist, skipping"
@@ -208,7 +240,7 @@ for entry in "${ENTRIES[@]}"; do
     fi
 
     if [[ "$label" == "push-only" ]]; then
-        push_repo_and_submodules "$repo_dir" > "$PUSH_LOG_DIR/$repo_name.log" 2>&1 &
+        push_repo_and_submodules "$repo_dir" > "$PUSH_LOG_DIR/$log_name.log" 2>&1 &
         background_pids+=("$!")
         background_repo_names+=("$repo_name")
         continue

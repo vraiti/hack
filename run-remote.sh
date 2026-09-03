@@ -181,26 +181,16 @@ ssh "$SSH_ALIAS" "mkdir -p $(printf '%q' "$REMOTE_ROOT")"
 # this machine explicitly; without one, use CWD.
 PROJECT_DIR="${PROFILE_LOCAL_HOME:-$PWD}"
 
-# ~/.local/hack (this toolset) is always treated as a push-only repo (see
-# sync-remote.sh's push_repo_and_submodules), regardless of whether any
-# profile's `sync` map mentions it -- remote-side scripts that live under a
-# checkout of this repo are expected to `git pull` their own copy, and that
-# pull is only safe once origin actually has whatever's committed locally.
-# Any uncommitted changes are auto-committed rather than blocking the run.
-HACK_DIR="$HOME/.local/hack"
-if [[ -e "$HACK_DIR/.git" ]]; then
-    if [[ -n "$(git -C "$HACK_DIR" status --porcelain)" ]]; then
-        echo "Auto-committing uncommitted changes in $HACK_DIR..."
-        git -C "$HACK_DIR" add -A
-        git -C "$HACK_DIR" commit -q -s -m "run-remote auto-commit"
-    fi
-    git -C "$HACK_DIR" push
-fi
-
+# ~/.local/hack (this toolset) is always treated as a push-only repo,
+# regardless of whether any profile's `sync` map mentions it -- remote-side
+# scripts that live under a checkout of this repo are expected to `git pull`
+# their own copy, and that pull is only safe once origin actually has
+# whatever's committed locally. sync-remote.sh's --extra handles the
+# auto-commit-then-push itself, same as any other push-only entry.
 if [[ -n "$PROFILE_NAME" ]]; then
-    bash "$SCRIPT_DIR/sync-remote.sh" "$SSH_ALIAS" "$REMOTE_ROOT" "$PROJECT_DIR" --profile "$PROFILE_NAME"
+    bash "$SCRIPT_DIR/sync-remote.sh" "$SSH_ALIAS" "$REMOTE_ROOT" "$PROJECT_DIR" --profile "$PROFILE_NAME" --extra "$HOME/.local/hack:push-only"
 else
-    bash "$SCRIPT_DIR/sync-remote.sh" "$SSH_ALIAS" "$REMOTE_ROOT" "$PROJECT_DIR"
+    bash "$SCRIPT_DIR/sync-remote.sh" "$SSH_ALIAS" "$REMOTE_ROOT" "$PROJECT_DIR" --extra "$HOME/.local/hack:push-only"
 fi
 
 REMOTE_VENV_DIR="$REMOTE_ROOT/$VENV_NAME"
