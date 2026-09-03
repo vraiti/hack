@@ -12,6 +12,7 @@ set -euo pipefail
 ARGS=()
 PROFILE_NAME=""
 EXTRA_ENTRIES=()
+QUIET=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --profile)
@@ -30,6 +31,10 @@ while [[ $# -gt 0 ]]; do
             EXTRA_ENTRIES+=("${1#--extra=}")
             shift
             ;;
+        --quiet)
+            QUIET=1
+            shift
+            ;;
         *)
             ARGS+=("$1")
             shift
@@ -37,6 +42,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 set -- "${ARGS[@]}"
+
+# Informational, "everything's fine" progress messages only -- WARNING/ERROR
+# (real problems) always print regardless of --quiet.
+log() {
+    [[ "$QUIET" -eq 1 ]] || echo "$@"
+}
 
 SSH_ALIAS="${1:?Usage: $0 <ssh-alias> <remote-root> [project-dir] [--profile NAME]}"
 REMOTE_ROOT="${2:?Usage: $0 <ssh-alias> <remote-root> [project-dir] [--profile NAME]}"
@@ -103,7 +114,7 @@ resolve_repo_dir() {
 auto_commit_tree() {
     local repo_dir="$1"
     if [[ -n "$(git -C "$repo_dir" status --porcelain)" ]]; then
-        echo "Auto-committing uncommitted changes in $repo_dir..."
+        log "Auto-committing uncommitted changes in $repo_dir..."
         git -C "$repo_dir" add -A
         git -C "$repo_dir" commit -q -s -m "run-remote auto-commit"
     fi
@@ -159,7 +170,7 @@ check_dependency() {
         return
     fi
 
-    echo "Rebuilding $sync_dir ($upstream_dir changed since last rebuild)..."
+    log "Rebuilding $sync_dir ($upstream_dir changed since last rebuild)..."
     ( cd "$PROJECT_DIR" && bash -c "$hook" )
     mkdir -p "$sync_path"
     echo "$upstream_head" > "$marker"
@@ -276,11 +287,11 @@ for entry in "${ENTRIES[@]}"; do
     fi
     remote_id="$(ssh "$SSH_ALIAS" "cat $(printf '%q' "$marker_path") 2>/dev/null" || true)"
     if [[ -n "$remote_id" && "$remote_id" == "$local_id" ]]; then
-        echo "Skipping $repo_name (unchanged since last sync)"
+        log "Skipping $repo_name (unchanged since last sync)"
         continue
     fi
 
-    echo "Syncing $repo_name..."
+    log "Syncing $repo_name..."
     if [[ -e "$repo_dir/.git" ]]; then
         # Export exactly the committed tree at HEAD (via `git archive`) and
         # rsync --delete *that*, rather than the working directory --

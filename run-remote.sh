@@ -41,6 +41,7 @@ VENV_NAME="venv"
 VENV_SPECIFIED=0
 EXTRA_ENV=()
 PROFILE_NAME=""
+QUIET=0
 ARGS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -68,6 +69,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --profile=*)
             PROFILE_NAME="${1#--profile=}"
+            shift
+            ;;
+        -q)
+            QUIET=1
             shift
             ;;
         *)
@@ -107,8 +112,10 @@ if [[ -n "$PROFILE_NAME" ]]; then
         echo "ERROR: profile '$PROFILE_NAME' not found at $PROFILE_PATH" >&2
         exit 1
     fi
-    echo "Using profile '$PROFILE_NAME':"
-    cat "$PROFILE_PATH"
+    if [[ "$QUIET" -ne 1 ]]; then
+        echo "Using profile '$PROFILE_NAME':"
+        cat "$PROFILE_PATH"
+    fi
     if [[ "$VENV_SPECIFIED" -eq 0 ]]; then
         PROFILE_VENV="$(jq -r '.venv' "$PROFILE_PATH")"
         if [[ -n "$PROFILE_VENV" && "$PROFILE_VENV" != "null" ]]; then
@@ -141,7 +148,7 @@ if [[ -n "$PROFILE_NAME" ]]; then
 fi
 
 if [[ $# -lt 1 ]]; then
-    echo "Usage: $0 [alias[:remote_path]] [--venv NAME] [--env VAR=value ...] [--profile NAME] <command> [args...]" >&2
+    echo "Usage: $0 [alias[:remote_path]] [--venv NAME] [--env VAR=value ...] [--profile NAME] [-q] <command> [args...]" >&2
     exit 1
 fi
 
@@ -187,10 +194,12 @@ PROJECT_DIR="${PROFILE_LOCAL_HOME:-$PWD}"
 # their own copy, and that pull is only safe once origin actually has
 # whatever's committed locally. sync-remote.sh's --extra handles the
 # auto-commit-then-push itself, same as any other push-only entry.
+SYNC_QUIET_FLAG=()
+[[ "$QUIET" -eq 1 ]] && SYNC_QUIET_FLAG=(--quiet)
 if [[ -n "$PROFILE_NAME" ]]; then
-    bash "$SCRIPT_DIR/sync-remote.sh" "$SSH_ALIAS" "$REMOTE_ROOT" "$PROJECT_DIR" --profile "$PROFILE_NAME" --extra "$HOME/.local/hack:push-only"
+    bash "$SCRIPT_DIR/sync-remote.sh" "$SSH_ALIAS" "$REMOTE_ROOT" "$PROJECT_DIR" --profile "$PROFILE_NAME" --extra "$HOME/.local/hack:push-only" "${SYNC_QUIET_FLAG[@]}"
 else
-    bash "$SCRIPT_DIR/sync-remote.sh" "$SSH_ALIAS" "$REMOTE_ROOT" "$PROJECT_DIR" --extra "$HOME/.local/hack:push-only"
+    bash "$SCRIPT_DIR/sync-remote.sh" "$SSH_ALIAS" "$REMOTE_ROOT" "$PROJECT_DIR" --extra "$HOME/.local/hack:push-only" "${SYNC_QUIET_FLAG[@]}"
 fi
 
 REMOTE_VENV_DIR="$REMOTE_ROOT/$VENV_NAME"
@@ -199,7 +208,7 @@ if ! ssh "$SSH_ALIAS" "test -d $(printf '%q' "$REMOTE_VENV_DIR")"; then
         echo "ERROR: venv '$VENV_NAME' not found at $SSH_ALIAS:$REMOTE_VENV_DIR" >&2
         exit 1
     fi
-    echo "venv not found at $SSH_ALIAS:$REMOTE_VENV_DIR, creating..."
+    [[ "$QUIET" -ne 1 ]] && echo "venv not found at $SSH_ALIAS:$REMOTE_VENV_DIR, creating..."
     scp "$SCRIPT_DIR/create-venv.sh" "$SSH_ALIAS:/tmp/"
     ssh "$SSH_ALIAS" "bash /tmp/create-venv.sh $(printf '%q' "$REMOTE_VENV_DIR")"
 fi
@@ -262,7 +271,7 @@ while true; do
     if ssh "$SSH_ALIAS" "test -f $(printf '%q' "$EXIT_FILE")" 2>/dev/null; then
         break
     fi
-    echo "Connection to $SSH_ALIAS dropped, reconnecting in 5s..." >&2
+    [[ "$QUIET" -ne 1 ]] && echo "Connection to $SSH_ALIAS dropped, reconnecting in 5s..." >&2
     sleep 5
 done
 
