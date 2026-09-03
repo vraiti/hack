@@ -186,11 +186,13 @@ PROJECT_DIR="${PROFILE_LOCAL_HOME:-$PWD}"
 # profile's `sync` map mentions it -- remote-side scripts that live under a
 # checkout of this repo are expected to `git pull` their own copy, and that
 # pull is only safe once origin actually has whatever's committed locally.
+# Any uncommitted changes are auto-committed rather than blocking the run.
 HACK_DIR="$HOME/.local/hack"
 if [[ -e "$HACK_DIR/.git" ]]; then
     if [[ -n "$(git -C "$HACK_DIR" status --porcelain)" ]]; then
-        echo "ERROR: $HACK_DIR has uncommitted changes" >&2
-        exit 1
+        echo "Auto-committing uncommitted changes in $HACK_DIR..."
+        git -C "$HACK_DIR" add -A
+        git -C "$HACK_DIR" commit -q -s -m "run-remote auto-commit"
     fi
     git -C "$HACK_DIR" push
 fi

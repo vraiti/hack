@@ -68,11 +68,36 @@ if [[ "$HAVE_PROFILE_SYNC" -eq 0 ]]; then
     mapfile -t ENTRIES < "$REPOS_FILE"
 fi
 
-# Refuse upfront -- before any dependency rebuild, push, or sync happens --
-# if any sync directory (including push-only ones) has uncommitted changes,
-# rather than discovering it mid-run when a background push silently logs a
-# failure and everything else proceeds anyway.
-dirty=()
+# Auto-commit any uncommitted changes in a repo (and its initialized
+# submodules, recursively) rather than refusing to proceed -- run-remote's
+# workflow is edit-locally-then-sync, so a dirty tree just means "not
+# committed yet," not a hazard to route around.
+auto_commit_tree() {
+    local repo_dir="$1"
+    if [[ -n "$(git -C "$repo_dir" status --porcelain)" ]]; then
+        echo "Auto-committing uncommitted changes in $repo_dir..."
+        git -C "$repo_dir" add -A
+        git -C "$repo_dir" commit -q -s -m "run-remote auto-commit"
+    fi
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        [[ "${line:0:1}" == "-" ]] && continue  # not initialized, nothing to commit
+        local sub_path
+        sub_path="$(awk '{print $2}' <<< "$line")"
+        auto_commit_tree "$repo_dir/$sub_path"
+    done < <(git -C "$repo_dir" submodule status 2>/dev/null)
+}
+
+# Do this upfront -- before any dependency rebuild, push, or sync happens,
+# and entirely synchronously -- for every top-level sync directory
+# (including push-only ones). Two reasons this has to happen here rather
+# than lazily where each repo is later encountered: (1) discovering a dirty
+# repo mid-run, after a background push already started, used to mean a
+# silently-logged failure while everything else proceeded anyway; (2) the
+# background push path (push_repo_and_submodules) and the foreground
+# archive/rsync path below both touch the same repos, including the same
+# submodules -- committing lazily in both places would race two concurrent
+# `git commit`s against the same working tree/index.
 for entry in "${ENTRIES[@]}"; do
     entry="${entry%%#*}"
     entry="${entry// /}"
@@ -80,14 +105,8 @@ for entry in "${ENTRIES[@]}"; do
     repo_name="${entry%%:*}"
     repo_dir="$PROJECT_DIR/$repo_name"
     [[ -e "$repo_dir/.git" ]] || continue
-    if [[ -n "$(git -C "$repo_dir" status --porcelain)" ]]; then
-        dirty+=("$repo_name")
-    fi
+    auto_commit_tree "$repo_dir"
 done
-if [[ ${#dirty[@]} -gt 0 ]]; then
-    echo "ERROR: uncommitted changes in: ${dirty[*]}" >&2
-    exit 1
-fi
 
 # A profile's `dependencies` key (see profile.py) is
 # {<sync-directory>: {<upstream-sync-directory>: <rebuild-hook>}} -- before
@@ -140,11 +159,9 @@ archive_repo_tree() {
         [[ "${line:0:1}" == "-" ]] && continue  # not initialized, nothing to sync
         local sub_path sub_commit
         sub_path="$(awk '{print $2}' <<< "$line")"
+        # Already committed by auto_commit_tree above, so this status line's
+        # sha is already the final one -- no need to re-check or re-read it.
         sub_commit="$(awk '{print $1}' <<< "$line" | tr -d '+-')"
-        if [[ -n "$(git -C "$repo_dir/$sub_path" status --porcelain)" ]]; then
-            echo "ERROR: $repo_dir/$sub_path has uncommitted changes" >&2
-            exit 1
-        fi
         archive_repo_tree "$repo_dir/$sub_path" "$sub_commit" "$dest_dir/$sub_path"
     done < <(git -C "$repo_dir" submodule status 2>/dev/null)
 }
@@ -154,10 +171,7 @@ archive_repo_tree() {
 # protocol). Recurses into submodules so each gets pushed too.
 push_repo_and_submodules() {
     local repo_dir="$1"
-    if [[ -n "$(git -C "$repo_dir" status --porcelain)" ]]; then
-        echo "ERROR: $repo_dir has uncommitted changes" >&2
-        return 1
-    fi
+    # Already committed by auto_commit_tree above -- just push.
     git -C "$repo_dir" push
 
     while IFS= read -r line; do
@@ -223,10 +237,7 @@ for entry in "${ENTRIES[@]}"; do
     # path/mtime/size stands in for it instead.
     marker_path="$REMOTE_ROOT/$repo_name/.rrr-synced-commit"
     if [[ -e "$repo_dir/.git" ]]; then
-        if [[ -n "$(git -C "$repo_dir" status --porcelain)" ]]; then
-            echo "ERROR: $repo_dir has uncommitted changes" >&2
-            exit 1
-        fi
+        # Already committed by auto_commit_tree above -- just read HEAD.
         local_id="$(git -C "$repo_dir" rev-parse HEAD)"
     else
         local_id="$(find "$repo_dir" -type f -printf '%P %T@ %s\n' 2>/dev/null | sort | sha256sum | awk '{print $1}')"
