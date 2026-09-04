@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # PYTHON_ARGCOMPLETE_OK
-"""Manages run-remote.sh profiles: JSON files under ~/.local/run-remote/,
+"""Manages run-remote.sh profiles: JSON files under ~/.local/hack/profiles/,
 selectable via `run-remote.sh --profile <name>`."""
 import argparse
 import json
@@ -12,7 +12,7 @@ from pathlib import Path
 import argcomplete
 
 VALID_SYNC_LABELS = {"default", "site-package", "push-only"}
-PROFILE_DIR = Path.home() / ".local" / "run-remote"
+PROFILE_DIR = Path.home() / ".local" / "hack" / "profiles"
 
 SINGULAR_KEYS = {"venv", "host", "home", "local-home"}
 REPEATABLE_KEYS = {"env", "sync", "include", "dependency", "command"}

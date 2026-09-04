@@ -54,7 +54,7 @@ REMOTE_ROOT="${2:?Usage: $0 <ssh-alias> <remote-root> [project-dir] [--profile N
 PROJECT_DIR="${3:-}"
 
 if [[ -n "$PROFILE_NAME" ]]; then
-    PROFILE_PATH="$HOME/.local/run-remote/$PROFILE_NAME.json"
+    PROFILE_PATH="$HOME/.local/hack/profiles/$PROFILE_NAME.json"
     if [[ ! -f "$PROFILE_PATH" ]]; then
         echo "ERROR: profile '$PROFILE_NAME' not found at $PROFILE_PATH" >&2
         exit 1

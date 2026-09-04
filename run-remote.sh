@@ -102,12 +102,12 @@ for a in "${ARGS[@]}"; do
 done
 set -- "${MAIN_ARGS[@]}"
 
-# A profile (~/.local/run-remote/<name>.json, written by profile.py)
+# A profile (~/.local/hack/profiles/<name>.json, written by profile.py)
 # supplies default `venv`/`env` values -- applied here, before --venv/--env
 # parsing above has a chance to matter, so an explicit CLI flag still wins
 # over whatever the profile set.
 if [[ -n "$PROFILE_NAME" ]]; then
-    PROFILE_PATH="$HOME/.local/run-remote/$PROFILE_NAME.json"
+    PROFILE_PATH="$HOME/.local/hack/profiles/$PROFILE_NAME.json"
     if [[ ! -f "$PROFILE_PATH" ]]; then
         echo "ERROR: profile '$PROFILE_NAME' not found at $PROFILE_PATH" >&2
         exit 1

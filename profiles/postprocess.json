@@ -1,0 +1,21 @@
+{
+  "sync": {
+    "vllm": "site-package",
+    "vllm-omni": "default",
+    "d3g": "default",
+    "python-tracer": "push-only"
+  },
+  "venv": "d3g-venv",
+  "command": [
+    "d3g/d3g-postprocess"
+  ],
+  "dependencies": {
+    "d3g": {
+      "python-tracer": "bash vllm-omni-aux/utils/rebuild-d3g.sh"
+    }
+  },
+  "env": {
+    "PYTHON_D3G_CONFIG": "d3g/configs/traceall.json",
+    "PYTHON_D3G_OUTDIR": "/opt/dlami/nvme/trace"
+  }
+}

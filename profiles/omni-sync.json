@@ -1,0 +1,14 @@
+{
+  "sync": {
+    "vllm": "site-package",
+    "vllm-omni": "default",
+    "vllm-omni-aux": "default",
+    "d3g": "default",
+    "python-tracer": "push-only"
+  },
+  "dependencies": {
+    "d3g": {
+      "python-tracer": "bash vllm-omni-aux/utils/rebuild-d3g.sh"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "venv": "d3g-venv",
+  "command": [
+    "vllm-omni-aux/utils/deploy.py",
+    "qwen3-omni",
+    "1gpu.yaml",
+    "--client=vllm-omni-aux/clients/livekit_replay_client.sh"
+  ],
+  "sync": {
+    "vllm": "site-package",
+    "vllm-omni": "default",
+    "vllm-omni-aux": "default",
+    "d3g": "default",
+    "python-tracer": "push-only"
+  },
+  "dependencies": {
+    "d3g": {
+      "python-tracer": "bash vllm-omni-aux/utils/rebuild-d3g.sh"
+    }
+  }
+}

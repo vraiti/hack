@@ -1,0 +1,7 @@
+{
+  "venv": "d3g-venv",
+  "env": {
+    "PYTHON_TRACER_CONFIG": "d3g/configs/traceall.json",
+    "PYTHON_TRACER_OUTDIR": "trace"
+  }
+}
