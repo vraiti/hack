@@ -13,15 +13,21 @@ import argcomplete
 
 VALID_SYNC_LABELS = {"default", "site-package", "push-only"}
 PROFILE_DIR = Path.home() / ".local" / "hack" / "profiles"
+SECRETS_DIR = PROFILE_DIR / "secrets"
 
 SINGULAR_KEYS = {"venv", "host", "home", "local-home"}
-REPEATABLE_KEYS = {"env", "sync", "include", "dependency", "command"}
+REPEATABLE_KEYS = {"env", "secret", "sync", "include", "dependency", "command"}
 VALID_KEYS = SINGULAR_KEYS | REPEATABLE_KEYS
 
 CREATE_USAGE = (
     "%(prog)s <profile-name> [key=value ...] [-- CMD [args...]]\n\n"
     "  venv=NAME              Remote venv name\n"
     "  env=VAR=value          Extra remote env var (repeatable, or comma-separated: env=A=1,B=2)\n"
+    "  secret=VAR=value       Extra remote env var kept out of the (git-tracked) profile JSON --\n"
+    "                         written to profiles/secrets/<name>.txt (gitignored) instead, and\n"
+    "                         merged into the remote env at runtime same as env= (repeatable,\n"
+    "                         or comma-separated: secret=A=1,B=2). Given secret= wholly replaces\n"
+    "                         the profile's secrets file, same as env=.\n"
     "  host=ALIAS             SSH alias\n"
     "  home=PATH              Remote project root\n"
     "  local-home=PATH        Project directory on this machine (defaults to CWD)\n"
@@ -64,7 +70,7 @@ def parse_args(argv):
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
     create = subparsers.add_parser(
-        "create",
+        "mk",
         usage=CREATE_USAGE,
         help="Create a new profile (refuses if one already exists)",
     )
@@ -86,10 +92,10 @@ def parse_args(argv):
 
     subparsers.add_parser("ls", help="List profile names")
 
-    show = subparsers.add_parser("show", help="Print a profile's resolved JSON")
+    show = subparsers.add_parser("get", help="Print a profile's resolved JSON")
     show.add_argument("profile_name").completer = profile_name_completer
 
-    delete = subparsers.add_parser("delete", help="Delete a profile")
+    delete = subparsers.add_parser("rm", help="Delete a profile")
     delete.add_argument("profile_name").completer = profile_name_completer
 
     argcomplete.autocomplete(parser)
@@ -153,6 +159,24 @@ def profile_path(name):
     return PROFILE_DIR / f"{name}.json"
 
 
+def secrets_path(name):
+    return SECRETS_DIR / f"{name}.txt"
+
+
+def write_secrets(name, secret_args):
+    SECRETS_DIR.mkdir(parents=True, exist_ok=True)
+    path = secrets_path(name)
+    lines = []
+    for kv in secret_args:
+        k, sep, v = kv.partition("=")
+        if not sep:
+            print(f"ERROR: expected secret=KEY=VALUE, got 'secret={kv}'", file=sys.stderr)
+            sys.exit(1)
+        lines.append(f"{k}={v}")
+    path.write_text("".join(f"{line}\n" for line in lines))
+    return path
+
+
 def load_profile(name):
     path = profile_path(name)
     if not path.is_file():
@@ -173,7 +197,9 @@ def build_own(kv_tokens, command):
 
     # venv/env/sync are only written when explicitly given -- an omitted key
     # lets an `include`d profile's value show through the latest-wins merge
-    # instead of being clobbered by an implicit default.
+    # instead of being clobbered by an implicit default. `secret` never goes
+    # into `own` at all -- it's written to its own gitignored file by the
+    # caller, never merged into the JSON dict.
     own = {}
     if singular.get("venv"):
         own["venv"] = singular["venv"]
@@ -196,7 +222,7 @@ def build_own(kv_tokens, command):
         own["sync"] = build_sync(repeatable["sync"])
     if repeatable["dependency"]:
         own["dependencies"] = build_dependencies(repeatable["dependency"])
-    return own, repeatable["include"]
+    return own, repeatable["include"], repeatable["secret"]
 
 
 def write_profile(name, merged):
@@ -206,14 +232,14 @@ def write_profile(name, merged):
     return path
 
 
-def cmd_create(args):
+def cmd_mk(args):
     path = profile_path(args.profile_name)
     if path.is_file():
         print(f"ERROR: profile '{args.profile_name}' already exists at {path} "
               f"(use 'mod' to update it)", file=sys.stderr)
         sys.exit(1)
 
-    own, includes = build_own(args.rest, args.command)
+    own, includes, secrets = build_own(args.rest, args.command)
 
     # A brand-new profile starts from an empty base -- `include=` merges in
     # (simple top-level dict update, latest-wins per key, e.g. `env` is
@@ -226,6 +252,10 @@ def cmd_create(args):
 
     path = write_profile(args.profile_name, merged)
     print(f"Wrote profile '{args.profile_name}' at {path}")
+
+    if secrets:
+        secrets_file = write_secrets(args.profile_name, secrets)
+        print(f"Wrote {len(secrets)} secret(s) to {secrets_file}")
 
 
 def cmd_mod(args):
@@ -240,7 +270,7 @@ def cmd_mod(args):
         subprocess.call([editor, str(path)])
         return
 
-    own, includes = build_own(args.rest, args.command)
+    own, includes, secrets = build_own(args.rest, args.command)
 
     # A profile that already exists is updated in place, not replaced -- any
     # key this invocation doesn't touch (no matching key=value, no include=
@@ -258,18 +288,22 @@ def cmd_mod(args):
     verb = "Updated" if existed else "Wrote"
     print(f"{verb} profile '{args.profile_name}' at {path}")
 
+    if secrets:
+        secrets_file = write_secrets(args.profile_name, secrets)
+        print(f"Wrote {len(secrets)} secret(s) to {secrets_file}")
+
 
 def cmd_ls(_args):
     for name in list_profile_names():
         print(name)
 
 
-def cmd_show(args):
+def cmd_get(args):
     profile = load_profile(args.profile_name)
     print(json.dumps(profile, indent=2))
 
 
-def cmd_delete(args):
+def cmd_rm(args):
     path = profile_path(args.profile_name)
     if not path.is_file():
         print(f"ERROR: profile '{args.profile_name}' not found at {path}", file=sys.stderr)
@@ -283,11 +317,11 @@ def main():
     args = parse_args(argv)
     args.command = command
     {
-        "create": cmd_create,
+        "mk": cmd_mk,
         "mod": cmd_mod,
         "ls": cmd_ls,
-        "show": cmd_show,
-        "delete": cmd_delete,
+        "get": cmd_get,
+        "rm": cmd_rm,
     }[args.subcommand](args)
 
 

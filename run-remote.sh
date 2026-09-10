@@ -94,6 +94,16 @@ while IFS= read -r kv; do
     EXTRA_ENV+=("$kv")
 done < <(jq -r '.env // {} | to_entries[] | "\(.key)=\(.value)"' "$PROFILE_PATH")
 
+# Secrets live outside the (git-tracked) profile JSON, in a gitignored
+# sibling file written by `profile.py ... secret=KEY=VALUE` -- one KEY=VALUE
+# per line. Appended after the JSON env so a secret wins on a key collision.
+SECRETS_PATH="$HOME/.local/hack/profiles/secrets/$PROFILE_NAME.txt"
+if [[ -f "$SECRETS_PATH" ]]; then
+    while IFS= read -r kv; do
+        [[ -n "$kv" ]] && EXTRA_ENV+=("$kv")
+    done < "$SECRETS_PATH"
+fi
+
 PROFILE_HOST="$(jq -r '.host // empty' "$PROFILE_PATH")"
 PROFILE_HOME="$(jq -r '.home // empty' "$PROFILE_PATH")"
 PROFILE_LOCAL_HOME="$(jq -r '.["local-home"] // empty' "$PROFILE_PATH")"
@@ -159,8 +169,6 @@ fi
 REMOTE_CMD="$1"
 shift
 
-HF_TOKEN=$(cat ~/.secret/hf)
-
 EXTRA_EXPORTS=""
 for kv in "${EXTRA_ENV[@]}"; do
     EXTRA_EXPORTS+="$(printf 'export %s=%q; ' "${kv%%=*}" "${kv#*=}")"
@@ -169,10 +177,10 @@ done
 # ssh flattens all trailing arguments into a single string and reparses it
 # remotely, so build one shell-safe command string (with printf %q) rather
 # than passing activate/exec/env as separate ssh arguments -- an env-var
-# prefix (VAR=val cmd1 && cmd2) only applies to cmd1, not cmd2, so HF_TOKEN
-# (and any --env vars) must be `export`ed inside the string, not passed as a
+# prefix (VAR=val cmd1 && cmd2) only applies to cmd1, not cmd2, so a
+# profile's env vars must be `export`ed inside the string, not passed as a
 # leading ssh arg.
-REMOTE_SHELL_CMD="$(printf 'export HF_TOKEN=%q; %scd %q && source %q/bin/activate && %q' "$HF_TOKEN" "$EXTRA_EXPORTS" "$REMOTE_ROOT" "$VENV_NAME" "$REMOTE_CMD")"
+REMOTE_SHELL_CMD="$(printf '%scd %q && source %q/bin/activate && %q' "$EXTRA_EXPORTS" "$REMOTE_ROOT" "$VENV_NAME" "$REMOTE_CMD")"
 for arg in "$@" "${APPEND_ARGS[@]}"; do
     REMOTE_SHELL_CMD+="$(printf ' %q' "$arg")"
 done
