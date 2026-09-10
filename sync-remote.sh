@@ -114,9 +114,26 @@ resolve_repo_dir() {
 auto_commit_tree() {
     local repo_dir="$1"
     if [[ -n "$(git -C "$repo_dir" status --porcelain)" ]]; then
-        log "Auto-committing uncommitted changes in $repo_dir..."
+        local branch auto_branch
+        branch="$(git -C "$repo_dir" branch --show-current)"
+        if [[ -z "$branch" ]]; then
+            branch="detached-$(git -C "$repo_dir" rev-parse --short HEAD)"
+        fi
+        if [[ "$branch" == AUTOCOMMIT/* ]]; then
+            auto_branch="$branch"
+        else
+            auto_branch="AUTOCOMMIT/$branch"
+        fi
+
+        if git -C "$repo_dir" show-ref --verify --quiet "refs/heads/$auto_branch"; then
+            git -C "$repo_dir" checkout "$auto_branch"
+        else
+            git -C "$repo_dir" checkout -b "$auto_branch"
+        fi
+
+        log "Auto-committing uncommitted changes in $repo_dir on $auto_branch..."
         git -C "$repo_dir" add -A
-        git -C "$repo_dir" commit -q -s -m "run-remote auto-commit"
+        git -C "$repo_dir" commit -q -s --no-verify -m "run-remote auto-commit"
     fi
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
