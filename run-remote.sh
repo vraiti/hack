@@ -3,6 +3,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
+# Mirror everything this script prints (including the remote job's output,
+# streamed live through the ssh -tt watch loop below) to a local log file,
+# in addition to the terminal -- so a run can be inspected after the fact
+# even though the terminal itself is the primary, interactive output.
+LOG_DIR="$PWD/logs"
+mkdir -p "$LOG_DIR"
+exec > >(tee -a "$LOG_DIR/run-remote.log") 2>&1
+
 resolve_alias() {
     # Aliases live as `Host` lines inside files under ~/.ssh/config.d/ (e.g.
     # aws-manage's consolidated config.d/awsm, which holds one block per
