@@ -1,7 +1,7 @@
 {
   "command": [
     "vllm-omni-aux/utils/deploy.py",
-    "qwen3-omni",
+    "personaplex",
     "1gpu.yaml",
     "-i"
   ],
