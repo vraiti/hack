@@ -2,7 +2,8 @@
   "command": [
     "vllm-omni-aux/utils/deploy.py",
     "qwen3-omni",
-    "1gpu.yaml"
+    "1gpu.yaml",
+    "-i"
   ],
   "sync": {
     "vllm": "site-package",

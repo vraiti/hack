@@ -19,58 +19,14 @@ resolve_alias() {
     return 1
 }
 
-# An alias doesn't have to live in ~/.ssh/config.d/ -- it may just be a plain
-# `Host` entry in ~/.ssh/config (e.g. non-AWS boxes like a DGX Spark). Without
-# this check, an unrecognized-but-real alias falls through to resolve_alias()'s
-# "exactly one instance" convenience path and silently targets the WRONG host
-# instead of erroring -- confirmed causing a hang against a stopped EC2 instance
-# when the intended target ("spark") was only in ~/.ssh/config.
-is_known_host() {
-    local host="$1"
-    grep -qE "^Host[[:space:]]+(\S+[[:space:]]+)*${host}([[:space:]]|\$)" ~/.ssh/config.d/* 2>/dev/null && return 0
-    [[ -f "$HOME/.ssh/config" ]] && grep -qE "^[[:space:]]*Host[[:space:]]+(\S+[[:space:]]+)*${host}([[:space:]]|$)" "$HOME/.ssh/config" && return 0
-    return 1
-}
-
-# --venv NAME can appear anywhere in the argument list; it selects the venv
-# directory to activate remotely (relative to REMOTE_ROOT), defaulting to
-# "venv" for hosts provisioned the standard way. --env VAR=value (repeatable)
-# exports additional environment variables for the remote command, alongside
-# the always-exported HF_TOKEN.
-VENV_NAME="venv"
-VENV_SPECIFIED=0
-EXTRA_ENV=()
-PROFILE_NAME=""
+# -q suppresses the profile dump/venv-creation/reconnect chatter. A literal
+# `--` (as in git/kubectl) marks the start of extra args to append to the
+# profile's `command`; everything before it besides -q must be exactly the
+# required <profile> positional.
 QUIET=0
 ARGS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --venv)
-            VENV_NAME="$2"
-            VENV_SPECIFIED=1
-            shift 2
-            ;;
-        --venv=*)
-            VENV_NAME="${1#--venv=}"
-            VENV_SPECIFIED=1
-            shift
-            ;;
-        --env)
-            EXTRA_ENV+=("$2")
-            shift 2
-            ;;
-        --env=*)
-            EXTRA_ENV+=("${1#--env=}")
-            shift
-            ;;
-        --profile)
-            PROFILE_NAME="$2"
-            shift 2
-            ;;
-        --profile=*)
-            PROFILE_NAME="${1#--profile=}"
-            shift
-            ;;
         -q)
             QUIET=1
             shift
@@ -82,10 +38,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# A literal `--` (as in git/kubectl) marks extra args to append to whatever
-# the remote command ends up being -- explicit CLI command or, if none was
-# given, the profile's default `command`. Split out here so both cases share
-# the same appending logic below, instead of only working for one of them.
 MAIN_ARGS=()
 APPEND_ARGS=()
 found_dash=0
@@ -102,76 +54,63 @@ for a in "${ARGS[@]}"; do
 done
 set -- "${MAIN_ARGS[@]}"
 
-# A profile (~/.local/hack/profiles/<name>.json, written by profile.py)
-# supplies default `venv`/`env` values -- applied here, before --venv/--env
-# parsing above has a chance to matter, so an explicit CLI flag still wins
-# over whatever the profile set.
-if [[ -n "$PROFILE_NAME" ]]; then
-    PROFILE_PATH="$HOME/.local/hack/profiles/$PROFILE_NAME.json"
-    if [[ ! -f "$PROFILE_PATH" ]]; then
-        echo "ERROR: profile '$PROFILE_NAME' not found at $PROFILE_PATH" >&2
-        exit 1
-    fi
-    if [[ "$QUIET" -ne 1 ]]; then
-        echo "Using profile '$PROFILE_NAME':"
-        cat "$PROFILE_PATH"
-    fi
-    if [[ "$VENV_SPECIFIED" -eq 0 ]]; then
-        PROFILE_VENV="$(jq -r '.venv' "$PROFILE_PATH")"
-        if [[ -n "$PROFILE_VENV" && "$PROFILE_VENV" != "null" ]]; then
-            VENV_NAME="$PROFILE_VENV"
-            VENV_SPECIFIED=1
-        fi
-    fi
-    PROFILE_ENV=()
-    while IFS= read -r kv; do
-        PROFILE_ENV+=("$kv")
-    done < <(jq -r '.env // {} | to_entries[] | "\(.key)=\(.value)"' "$PROFILE_PATH")
-    EXTRA_ENV=("${PROFILE_ENV[@]}" "${EXTRA_ENV[@]}")
-
-    PROFILE_HOST="$(jq -r '.host // empty' "$PROFILE_PATH")"
-    PROFILE_HOME="$(jq -r '.home // empty' "$PROFILE_PATH")"
-    PROFILE_LOCAL_HOME="$(jq -r '.["local-home"] // empty' "$PROFILE_PATH")"
-
-    # A profile's `command` is only a default -- an explicit <command>
-    # [args...] on the CLI (i.e. $# still nonzero after flag parsing above)
-    # overrides it entirely rather than merging with it.
-    if [[ $# -eq 0 ]]; then
-        PROFILE_COMMAND=()
-        while IFS= read -r arg; do
-            PROFILE_COMMAND+=("$arg")
-        done < <(jq -r '.command // [] | .[]' "$PROFILE_PATH")
-        if [[ ${#PROFILE_COMMAND[@]} -gt 0 ]]; then
-            set -- "${PROFILE_COMMAND[@]}"
-        fi
-    fi
-fi
-
-if [[ $# -lt 1 ]]; then
-    echo "Usage: $0 [alias[:remote_path]] [--venv NAME] [--env VAR=value ...] [--profile NAME] [-q] <command> [args...]" >&2
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 [-q] <profile> [-- args...]" >&2
     exit 1
 fi
+PROFILE_NAME="$1"
+
+# ~/.local/hack/profiles/<name>.json (written by profile.py) supplies venv,
+# env, host/home, and the command to run -- run-remote no longer takes any
+# of those on the CLI, only which profile to use.
+PROFILE_PATH="$HOME/.local/hack/profiles/$PROFILE_NAME.json"
+if [[ ! -f "$PROFILE_PATH" ]]; then
+    echo "ERROR: profile '$PROFILE_NAME' not found at $PROFILE_PATH" >&2
+    exit 1
+fi
+if [[ "$QUIET" -ne 1 ]]; then
+    echo "Using profile '$PROFILE_NAME':"
+    cat "$PROFILE_PATH"
+fi
+
+VENV_NAME="venv"
+VENV_SPECIFIED=0
+PROFILE_VENV="$(jq -r '.venv // empty' "$PROFILE_PATH")"
+if [[ -n "$PROFILE_VENV" ]]; then
+    VENV_NAME="$PROFILE_VENV"
+    VENV_SPECIFIED=1
+fi
+
+EXTRA_ENV=()
+while IFS= read -r kv; do
+    EXTRA_ENV+=("$kv")
+done < <(jq -r '.env // {} | to_entries[] | "\(.key)=\(.value)"' "$PROFILE_PATH")
+
+PROFILE_HOST="$(jq -r '.host // empty' "$PROFILE_PATH")"
+PROFILE_HOME="$(jq -r '.home // empty' "$PROFILE_PATH")"
+PROFILE_LOCAL_HOME="$(jq -r '.["local-home"] // empty' "$PROFILE_PATH")"
+
+PROFILE_COMMAND=()
+while IFS= read -r arg; do
+    PROFILE_COMMAND+=("$arg")
+done < <(jq -r '.command // [] | .[]' "$PROFILE_PATH")
+if [[ ${#PROFILE_COMMAND[@]} -eq 0 ]]; then
+    echo "ERROR: profile '$PROFILE_NAME' has no \"command\"" >&2
+    exit 1
+fi
+set -- "${PROFILE_COMMAND[@]}"
 
 # Single-quoted so the literal text ($HOME, unexpanded) survives until it's
 # sent to the remote shell below -- it must expand against the remote
 # user's home, not whatever $HOME happens to be on this machine. A profile's
-# `home`/`host` (see profile.py) supply non-default values here, but
-# an explicit [alias[:remote_path]] argument still wins over either.
+# `home` supplies a non-default value here.
 REMOTE_ROOT="${PROFILE_HOME:-\$HOME/vraiti}"
-ALIAS_CANDIDATE="${1%%:*}"
-if is_known_host "$ALIAS_CANDIDATE"; then
-    SSH_ALIAS="$ALIAS_CANDIDATE"
-    if [[ "$1" == *:* ]]; then
-        PATH_CANDIDATE="${1#*:}"
-        [[ -n "$PATH_CANDIDATE" ]] && REMOTE_ROOT="$PATH_CANDIDATE"
-    fi
-    shift
-elif [[ -n "${PROFILE_HOST:-}" ]]; then
+if [[ -n "${PROFILE_HOST:-}" ]]; then
     SSH_ALIAS="$PROFILE_HOST"
 elif SSH_ALIAS=$(resolve_alias); then
     :
 else
-    echo "ERROR: multiple instances exist, specify an alias" >&2
+    echo "ERROR: multiple instances exist, set \"host\" in the profile" >&2
     ls ~/.ssh/config.d/ >&2
     exit 1
 fi
@@ -196,11 +135,7 @@ PROJECT_DIR="${PROFILE_LOCAL_HOME:-$PWD}"
 # auto-commit-then-push itself, same as any other push-only entry.
 SYNC_QUIET_FLAG=()
 [[ "$QUIET" -eq 1 ]] && SYNC_QUIET_FLAG=(--quiet)
-if [[ -n "$PROFILE_NAME" ]]; then
-    bash "$SCRIPT_DIR/sync-remote.sh" "$SSH_ALIAS" "$REMOTE_ROOT" "$PROJECT_DIR" --profile "$PROFILE_NAME" --extra "$HOME/.local/hack:push-only" "${SYNC_QUIET_FLAG[@]}"
-else
-    bash "$SCRIPT_DIR/sync-remote.sh" "$SSH_ALIAS" "$REMOTE_ROOT" "$PROJECT_DIR" --extra "$HOME/.local/hack:push-only" "${SYNC_QUIET_FLAG[@]}"
-fi
+bash "$SCRIPT_DIR/sync-remote.sh" "$SSH_ALIAS" "$REMOTE_ROOT" "$PROJECT_DIR" --profile "$PROFILE_NAME" --extra "$HOME/.local/hack:push-only" "${SYNC_QUIET_FLAG[@]}"
 
 REMOTE_VENV_DIR="$REMOTE_ROOT/$VENV_NAME"
 if ! ssh "$SSH_ALIAS" "test -d $(printf '%q' "$REMOTE_VENV_DIR")"; then
@@ -212,8 +147,6 @@ if ! ssh "$SSH_ALIAS" "test -d $(printf '%q' "$REMOTE_VENV_DIR")"; then
     scp "$SCRIPT_DIR/create-venv.sh" "$SSH_ALIAS:/tmp/"
     ssh "$SSH_ALIAS" "bash /tmp/create-venv.sh $(printf '%q' "$REMOTE_VENV_DIR")"
 fi
-
-AUX_DIR="$PROJECT_DIR/vllm-omni-aux"
 
 REMOTE_CMD="$1"
 shift
