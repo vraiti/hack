@@ -1,0 +1,11 @@
+#!/bin/bash
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+    echo "usage: ip-of <ssh-alias>" >&2
+    exit 1
+fi
+
+alias="$1"
+hostname=$(ssh -G "$alias" 2>/dev/null | awk '/^hostname / {print $2}')
+getent hosts "$hostname" | awk '{print $1}'
