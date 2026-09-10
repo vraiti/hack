@@ -227,8 +227,27 @@ archive_repo_tree() {
 # protocol). Recurses into submodules so each gets pushed too.
 push_repo_and_submodules() {
     local repo_dir="$1"
-    # Already committed by auto_commit_tree above -- just push.
-    git -C "$repo_dir" push
+    local branch source_branch remote
+
+    # Auto-commit branches do not have an upstream yet. Resolve their remote
+    # from the branch they were based on, then establish tracking on push.
+    branch="$(git -C "$repo_dir" branch --show-current)"
+    if [[ -z "$branch" ]]; then
+        echo "ERROR: cannot push $repo_dir with detached HEAD" >&2
+        return 1
+    fi
+    source_branch="$branch"
+    if [[ "$source_branch" == AUTOCOMMIT/* ]]; then
+        source_branch="${source_branch#AUTOCOMMIT/}"
+    fi
+    remote="$(git -C "$repo_dir" config --get "branch.${source_branch}.remote" || true)"
+    if [[ -z "$remote" ]]; then
+        echo "ERROR: no remote configured for source branch $source_branch in $repo_dir" >&2
+        return 1
+    fi
+
+    # Already committed by auto_commit_tree above -- push and set upstream.
+    git -C "$repo_dir" push -u "$remote" "$branch"
 
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
@@ -241,6 +260,7 @@ push_repo_and_submodules() {
 
 background_pids=()
 background_repo_names=()
+background_log_names=()
 PUSH_LOG_DIR="$(mktemp -d)"
 
 # Iterating a bash array (rather than reading lines from the source file via
@@ -271,6 +291,7 @@ for entry in "${ENTRIES[@]}"; do
         push_repo_and_submodules "$repo_dir" > "$PUSH_LOG_DIR/$log_name.log" 2>&1 &
         background_pids+=("$!")
         background_repo_names+=("$repo_name")
+        background_log_names+=("$log_name")
         continue
     fi
 
@@ -282,9 +303,10 @@ for entry in "${ENTRIES[@]}"; do
     # specific upstream commit as a site-package) has nothing to push and
     # `git push` there is a hard error, not a real failure -- skip it.
     if [[ -e "$repo_dir/.git" ]] && git -C "$repo_dir" symbolic-ref -q HEAD >/dev/null 2>&1; then
-        push_repo_and_submodules "$repo_dir" > "$PUSH_LOG_DIR/$repo_name.log" 2>&1 &
+        push_repo_and_submodules "$repo_dir" > "$PUSH_LOG_DIR/$log_name.log" 2>&1 &
         background_pids+=("$!")
         background_repo_names+=("$repo_name")
+        background_log_names+=("$log_name")
     fi
 
     # A marker file (excluded from rsync's own transfer/delete) records what
@@ -337,7 +359,7 @@ done
 for i in "${!background_pids[@]}"; do
     if ! wait "${background_pids[$i]}"; then
         echo "git push (${background_repo_names[$i]}) FAILED:" >&2
-        cat "$PUSH_LOG_DIR/${background_repo_names[$i]}.log" >&2
+        cat "$PUSH_LOG_DIR/${background_log_names[$i]}.log" >&2
     fi
 done
 rm -rf "$PUSH_LOG_DIR"
