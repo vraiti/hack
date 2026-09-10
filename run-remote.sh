@@ -76,9 +76,17 @@ if [[ ! -f "$PROFILE_PATH" ]]; then
     echo "ERROR: profile '$PROFILE_NAME' not found at $PROFILE_PATH" >&2
     exit 1
 fi
+# Secrets live outside the (git-tracked) profile JSON, in a gitignored
+# sibling file written by `profile.py ... secret=KEY=VALUE` -- one KEY=VALUE
+# per line.
+SECRETS_PATH="$HOME/.local/hack/profiles/secrets/$PROFILE_NAME.txt"
 if [[ "$QUIET" -ne 1 ]]; then
     echo "Using profile '$PROFILE_NAME':"
     cat "$PROFILE_PATH"
+    if [[ -f "$SECRETS_PATH" ]]; then
+        echo "Using secrets:"
+        cut -d= -f1 "$SECRETS_PATH"
+    fi
 fi
 
 VENV_NAME="venv"
@@ -94,10 +102,7 @@ while IFS= read -r kv; do
     EXTRA_ENV+=("$kv")
 done < <(jq -r '.env // {} | to_entries[] | "\(.key)=\(.value)"' "$PROFILE_PATH")
 
-# Secrets live outside the (git-tracked) profile JSON, in a gitignored
-# sibling file written by `profile.py ... secret=KEY=VALUE` -- one KEY=VALUE
-# per line. Appended after the JSON env so a secret wins on a key collision.
-SECRETS_PATH="$HOME/.local/hack/profiles/secrets/$PROFILE_NAME.txt"
+# Appended after the JSON env so a secret wins on a key collision.
 if [[ -f "$SECRETS_PATH" ]]; then
     while IFS= read -r kv; do
         [[ -n "$kv" ]] && EXTRA_ENV+=("$kv")
