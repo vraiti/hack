@@ -9,5 +9,6 @@
     "vllm": "site-package",
     "vllm-omni": "default",
     "vllm-omni-aux": "default"
-  }
+  },
+  "initializer": "vllm-omni-aux/utils/clean-traces.sh"
 }
