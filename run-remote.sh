@@ -112,6 +112,7 @@ fi
 PROFILE_HOST="$(jq -r '.host // empty' "$PROFILE_PATH")"
 PROFILE_HOME="$(jq -r '.home // empty' "$PROFILE_PATH")"
 PROFILE_LOCAL_HOME="$(jq -r '.["local-home"] // empty' "$PROFILE_PATH")"
+PROFILE_INITIALIZER="$(jq -r '.initializer // empty' "$PROFILE_PATH")"
 
 PROFILE_COMMAND=()
 while IFS= read -r arg; do
@@ -185,7 +186,14 @@ done
 # prefix (VAR=val cmd1 && cmd2) only applies to cmd1, not cmd2, so a
 # profile's env vars must be `export`ed inside the string, not passed as a
 # leading ssh arg.
-REMOTE_SHELL_CMD="$(printf '%scd %q && source %q/bin/activate && %q' "$EXTRA_EXPORTS" "$REMOTE_ROOT" "$VENV_NAME" "$REMOTE_CMD")"
+#
+# A profile's `initializer` is inserted here, after activation and before
+# the main command, as raw shell text (%s, not %q) -- it's meant to be
+# interpreted by the remote shell (e.g. `&&`-chained sub-commands), not
+# passed as a single literal argument.
+INIT_SEGMENT=""
+[[ -n "$PROFILE_INITIALIZER" ]] && INIT_SEGMENT="$PROFILE_INITIALIZER && "
+REMOTE_SHELL_CMD="$(printf '%scd %q && source %q/bin/activate && %s%q' "$EXTRA_EXPORTS" "$REMOTE_ROOT" "$VENV_NAME" "$INIT_SEGMENT" "$REMOTE_CMD")"
 for arg in "$@" "${APPEND_ARGS[@]}"; do
     REMOTE_SHELL_CMD+="$(printf ' %q' "$arg")"
 done

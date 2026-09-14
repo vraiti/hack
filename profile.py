@@ -15,7 +15,7 @@ VALID_SYNC_LABELS = {"default", "site-package", "push-only"}
 PROFILE_DIR = Path.home() / ".local" / "hack" / "profiles"
 SECRETS_DIR = PROFILE_DIR / "secrets"
 
-SINGULAR_KEYS = {"venv", "host", "home", "local-home"}
+SINGULAR_KEYS = {"venv", "host", "home", "local-home", "initializer"}
 REPEATABLE_KEYS = {"env", "secret", "sync", "include", "dependency", "command"}
 VALID_KEYS = SINGULAR_KEYS | REPEATABLE_KEYS
 
@@ -31,6 +31,8 @@ CREATE_USAGE = (
     "  host=ALIAS             SSH alias\n"
     "  home=PATH              Remote project root\n"
     "  local-home=PATH        Project directory on this machine (defaults to CWD)\n"
+    "  initializer=CMD        Shell command run remotely, inside the activated venv, before the\n"
+    "                         main command (e.g. initializer=\"pip install -e .[extra]\")\n"
     "  include=NAME           Merge in another profile's keys first (repeatable/comma-separated)\n"
     "  sync=PATH[:LABEL]      Sync map entry, label one of default/site-package/push-only\n"
     "                         (repeatable/comma-separated)\n"
@@ -211,6 +213,8 @@ def build_own(kv_tokens, command):
         own["home"] = singular["home"]
     if singular.get("local-home"):
         own["local-home"] = singular["local-home"]
+    if singular.get("initializer"):
+        own["initializer"] = singular["initializer"]
     # `-- CMD args...` wins over `command=` if both are given, since it's
     # the more explicit form (and can express args containing commas, which
     # command= can't since it splits on them).
