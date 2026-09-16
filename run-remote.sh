@@ -92,8 +92,9 @@ PROFILE_JSON="$(python3 -c 'import json, sys, yaml; json.dump(yaml.safe_load(sys
 # "plain name pointing at an existing/default venv directory" mode: every
 # profile must spell out how to build its venv. It's content-addressed
 # (SHA256 of its canonical JSON, not an order-independent hash -- installs
-# can be order-dependent) and cached at ~/.venvs/venv-<hash> on the remote,
-# shared across any profile that happens to specify the identical spec.
+# can be order-dependent) and cached at $REMOTE_ROOT/.venvs/venv-<hash>,
+# shared across any profile that happens to specify the identical spec and
+# REMOTE_ROOT.
 VENV_TYPE="$(jq -r '.venv | type' <<< "$PROFILE_JSON")"
 if [[ "$VENV_TYPE" != "array" ]]; then
     echo "ERROR: profile '$PROFILE_NAME' has no venv spec -- \"venv\" must be a list of" \
@@ -152,9 +153,10 @@ fi
 REMOTE_ROOT="$(ssh "$SSH_ALIAS" "echo $REMOTE_ROOT")"
 ssh "$SSH_ALIAS" "mkdir -p $(printf '%q' "$REMOTE_ROOT")"
 
-# The venv lives outside the project entirely, keyed only by its own spec
-# content, so it can be shared/reused across profiles/repos.
-REMOTE_VENV_DIR="$(ssh "$SSH_ALIAS" "echo \$HOME/.venvs/venv-$VENV_SPEC_HASH")"
+# Nested under the project root (not the remote $HOME) so it travels with
+# the project -- still keyed only by its own spec content, so it's reused
+# across any profile that shares both REMOTE_ROOT and the identical spec.
+REMOTE_VENV_DIR="$REMOTE_ROOT/.venvs/venv-$VENV_SPEC_HASH"
 
 # A profile's `local-home` (see profile.py) pins the project directory on
 # this machine explicitly; without one, use CWD.

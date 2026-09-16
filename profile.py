@@ -20,8 +20,8 @@ SECRETS_DIR = PROFILE_DIR / "secrets"
 # rather than a single dict since the same TYPE, e.g. "package", can appear
 # more than once). run-remote.sh hashes the whole spec (order-sensitive:
 # installs can be order-dependent) and builds a fresh venv from scratch
-# under ~/.venvs/venv-<hash> on the remote the first time that exact spec is
-# seen -- see create-venv-from-spec.sh. There's no "plain name" venv mode:
+# under <remote project root>/.venvs/venv-<hash> the first time that exact
+# spec is seen -- see create-venv-from-spec.sh. There's no "plain name" venv mode:
 # every profile's venv must be spelled out as a spec.
 VENV_SPEC_TYPES = {"python", "package", "requirements", "script"}
 
@@ -34,7 +34,7 @@ CREATE_USAGE = (
     "  venv=TYPE:CONTENT      Venv spec entry (repeatable, order matters -- installs can be\n"
     "                         order-dependent, and the same TYPE may repeat, e.g. several\n"
     "                         package= entries): a fresh venv is built once per distinct\n"
-    "                         spec and cached at ~/.venvs on the remote, shared across any\n"
+    "                         spec and cached at <project root>/.venvs, shared across any\n"
     "                         profile with the identical spec. TYPE is one of:\n"
     "                           python:VERSION        CPython version to create the venv with\n"
     "                           package:NAME           `uv pip install NAME`\n"
