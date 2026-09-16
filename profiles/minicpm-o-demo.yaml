@@ -8,6 +8,5 @@ venv:
 - python: '3.12'
 - package: torch==2.8.0
 - package: huggingface_hub
-- package: pkg_resources
-- package: setuptools-scm
+- package: setuptools
 - requirements: MiniCPM-o-Demo/requirements.txt
