@@ -15,13 +15,14 @@ VALID_SYNC_LABELS = {"default", "site-package", "push-only"}
 PROFILE_DIR = Path.home() / ".local" / "hack" / "profiles"
 SECRETS_DIR = PROFILE_DIR / "secrets"
 
-# A venv=TYPE:CONTENT token (TYPE one of these) builds a venv *spec* --
-# {content: type}, insertion order preserved -- run-remote.sh hashes it
-# (order-sensitive: installs can be order-dependent) and builds a fresh
-# venv from scratch under ~/.venvs/venv-<hash> on the remote the first time
-# that exact spec is seen, see create-venv-from-spec.sh. A bare venv=NAME
-# (no colon, or a TYPE not in this set) is the original plain venv name --
-# a directory under the remote project root, created empty and reused as-is.
+# Each venv=TYPE:CONTENT token (TYPE one of these) appends a {TYPE: CONTENT}
+# entry to the profile's venv *spec* -- a list, in the given order (a list
+# rather than a single dict since the same TYPE, e.g. "package", can appear
+# more than once). run-remote.sh hashes the whole spec (order-sensitive:
+# installs can be order-dependent) and builds a fresh venv from scratch
+# under ~/.venvs/venv-<hash> on the remote the first time that exact spec is
+# seen -- see create-venv-from-spec.sh. There's no "plain name" venv mode:
+# every profile's venv must be spelled out as a spec.
 VENV_SPEC_TYPES = {"python", "package", "requirements", "script"}
 
 SINGULAR_KEYS = {"host", "home", "local-home", "initializer"}
@@ -30,12 +31,11 @@ VALID_KEYS = SINGULAR_KEYS | REPEATABLE_KEYS
 
 CREATE_USAGE = (
     "%(prog)s <profile-name> [key=value ...] [-- CMD [args...]]\n\n"
-    "  venv=NAME              Remote venv name (a directory under the project root)\n"
-    "  venv=TYPE:CONTENT      Venv spec entry instead of a plain name (repeatable, order\n"
-    "                         matters -- installs can be order-dependent): a fresh venv is\n"
-    "                         built once per distinct spec and cached at ~/.venvs on the\n"
-    "                         remote, shared across any profile with the identical spec.\n"
-    "                         TYPE is one of:\n"
+    "  venv=TYPE:CONTENT      Venv spec entry (repeatable, order matters -- installs can be\n"
+    "                         order-dependent, and the same TYPE may repeat, e.g. several\n"
+    "                         package= entries): a fresh venv is built once per distinct\n"
+    "                         spec and cached at ~/.venvs on the remote, shared across any\n"
+    "                         profile with the identical spec. TYPE is one of:\n"
     "                           python:VERSION        CPython version to create the venv with\n"
     "                           package:NAME           `uv pip install NAME`\n"
     "                           requirements:PATH      `uv pip install -r PATH`\n"
@@ -43,7 +43,7 @@ CREATE_USAGE = (
     "                         e.g. venv=python:3.11 venv=requirements:requirements.txt\n"
     "                         venv=\"script:pip install -e .[dev]\"\n"
     "  env=VAR=value          Extra remote env var (repeatable, or comma-separated: env=A=1,B=2)\n"
-    "  secret=VAR=value       Extra remote env var kept out of the (git-tracked) profile JSON --\n"
+    "  secret=VAR=value       Extra remote env var kept out of the (git-tracked) profile YAML --\n"
     "                         written to profiles/secrets/<name>.txt (gitignored) instead, and\n"
     "                         merged into the remote env at runtime same as env= (repeatable,\n"
     "                         or comma-separated: secret=A=1,B=2). Given secret= wholly replaces\n"
@@ -151,24 +151,17 @@ def build_venv(venv_args):
     if not venv_args:
         return None
 
-    # A single token that isn't itself a recognized TYPE:CONTENT pair is
-    # the original plain venv name, kept as a bare string for backward
-    # compatibility (and because a one-entry spec still needs its TYPE
-    # prefix to mean anything -- "venv=myvenv" has no colon at all).
-    if len(venv_args) == 1:
-        type_, sep, _ = venv_args[0].partition(":")
-        if not sep or type_ not in VENV_SPEC_TYPES:
-            return venv_args[0]
-
-    spec = {}
+    # A list of single-key {TYPE: CONTENT} entries, in the given order --
+    # not a single dict, since the same TYPE can legitimately appear more
+    # than once (e.g. several "package" entries), which a dict can't hold.
+    spec = []
     for token in venv_args:
         type_, sep, content = token.partition(":")
         if not sep or type_ not in VENV_SPEC_TYPES:
             print(f"ERROR: expected venv=TYPE:CONTENT (TYPE one of "
-                  f"{', '.join(sorted(VENV_SPEC_TYPES))}) when giving more than one "
-                  f"venv= entry, got 'venv={token}'", file=sys.stderr)
+                  f"{', '.join(sorted(VENV_SPEC_TYPES))}), got 'venv={token}'", file=sys.stderr)
             sys.exit(1)
-        spec[content] = type_
+        spec.append({type_: content})
     return spec
 
 
@@ -250,7 +243,7 @@ def build_own(kv_tokens, command):
     # lets an `include`d profile's value show through the latest-wins merge
     # instead of being clobbered by an implicit default. `secret` never goes
     # into `own` at all -- it's written to its own gitignored file by the
-    # caller, never merged into the JSON dict.
+    # caller, never merged into the profile dict.
     own = {}
     venv = build_venv(repeatable["venv"])
     if venv is not None:
