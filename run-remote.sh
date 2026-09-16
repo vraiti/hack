@@ -60,15 +60,15 @@ if [[ $# -ne 1 ]]; then
 fi
 PROFILE_NAME="$1"
 
-# ~/.local/hack/profiles/<name>.json (written by profile.py) supplies venv,
+# ~/.local/hack/profiles/<name>.yaml (written by profile.py) supplies venv,
 # env, host/home, and the command to run -- run-remote no longer takes any
 # of those on the CLI, only which profile to use.
-PROFILE_PATH="$HOME/.local/hack/profiles/$PROFILE_NAME.json"
+PROFILE_PATH="$HOME/.local/hack/profiles/$PROFILE_NAME.yaml"
 if [[ ! -f "$PROFILE_PATH" ]]; then
     echo "ERROR: profile '$PROFILE_NAME' not found at $PROFILE_PATH" >&2
     exit 1
 fi
-# Secrets live outside the (git-tracked) profile JSON, in a gitignored
+# Secrets live outside the (git-tracked) profile YAML, in a gitignored
 # sibling file written by `profile.py ... secret=KEY=VALUE` -- one KEY=VALUE
 # per line.
 SECRETS_PATH="$HOME/.local/hack/profiles/secrets/$PROFILE_NAME.txt"
@@ -81,18 +81,41 @@ if [[ "$QUIET" -ne 1 ]]; then
     fi
 fi
 
+# jq needs JSON, but profiles are authored as YAML (profile.py) -- convert
+# once up front and query this derived JSON everywhere below instead of
+# PROFILE_PATH itself.
+PROFILE_JSON="$(python3 -c 'import json, sys, yaml; json.dump(yaml.safe_load(sys.stdin) or {}, sys.stdout)' < "$PROFILE_PATH")"
+
+# A profile's `venv` is either a plain name (a directory under REMOTE_ROOT,
+# the original behavior) or a map spec ({content: "python"|"package"|
+# "requirements"|"script"}, insertion order preserved) describing how to
+# build one from scratch -- see create-venv-from-spec.sh. A spec's venv is
+# content-addressed (SHA256 of its canonical JSON, not an order-independent
+# hash -- installs can be order-dependent) and cached at
+# ~/.venvs/venv-<hash> on the remote, shared across any profile that
+# happens to specify the identical spec.
 VENV_NAME="venv"
 VENV_SPECIFIED=0
-PROFILE_VENV="$(jq -r '.venv // empty' "$PROFILE_PATH")"
-if [[ -n "$PROFILE_VENV" ]]; then
-    VENV_NAME="$PROFILE_VENV"
-    VENV_SPECIFIED=1
+VENV_IS_SPEC=0
+VENV_SPEC_JSON=""
+VENV_SPEC_HASH=""
+VENV_TYPE="$(jq -r '.venv | type' <<< "$PROFILE_JSON")"
+if [[ "$VENV_TYPE" == "object" ]]; then
+    VENV_IS_SPEC=1
+    VENV_SPEC_JSON="$(jq -c '.venv' <<< "$PROFILE_JSON")"
+    VENV_SPEC_HASH="$(printf '%s' "$VENV_SPEC_JSON" | sha256sum | cut -d' ' -f1)"
+elif [[ "$VENV_TYPE" == "string" ]]; then
+    PROFILE_VENV="$(jq -r '.venv' <<< "$PROFILE_JSON")"
+    if [[ -n "$PROFILE_VENV" ]]; then
+        VENV_NAME="$PROFILE_VENV"
+        VENV_SPECIFIED=1
+    fi
 fi
 
 EXTRA_ENV=()
 while IFS= read -r kv; do
     EXTRA_ENV+=("$kv")
-done < <(jq -r '.env // {} | to_entries[] | "\(.key)=\(.value)"' "$PROFILE_PATH")
+done < <(jq -r '.env // {} | to_entries[] | "\(.key)=\(.value)"' <<< "$PROFILE_JSON")
 
 # Appended after the JSON env so a secret wins on a key collision.
 if [[ -f "$SECRETS_PATH" ]]; then
@@ -101,15 +124,15 @@ if [[ -f "$SECRETS_PATH" ]]; then
     done < "$SECRETS_PATH"
 fi
 
-PROFILE_HOST="$(jq -r '.host // empty' "$PROFILE_PATH")"
-PROFILE_HOME="$(jq -r '.home // empty' "$PROFILE_PATH")"
-PROFILE_LOCAL_HOME="$(jq -r '.["local-home"] // empty' "$PROFILE_PATH")"
-PROFILE_INITIALIZER="$(jq -r '.initializer // empty' "$PROFILE_PATH")"
+PROFILE_HOST="$(jq -r '.host // empty' <<< "$PROFILE_JSON")"
+PROFILE_HOME="$(jq -r '.home // empty' <<< "$PROFILE_JSON")"
+PROFILE_LOCAL_HOME="$(jq -r '.["local-home"] // empty' <<< "$PROFILE_JSON")"
+PROFILE_INITIALIZER="$(jq -r '.initializer // empty' <<< "$PROFILE_JSON")"
 
 PROFILE_COMMAND=()
 while IFS= read -r arg; do
     PROFILE_COMMAND+=("$arg")
-done < <(jq -r '.command // [] | .[]' "$PROFILE_PATH")
+done < <(jq -r '.command // [] | .[]' <<< "$PROFILE_JSON")
 if [[ ${#PROFILE_COMMAND[@]} -eq 0 ]]; then
     echo "ERROR: profile '$PROFILE_NAME' has no \"command\"" >&2
     exit 1
@@ -138,6 +161,15 @@ fi
 REMOTE_ROOT="$(ssh "$SSH_ALIAS" "echo $REMOTE_ROOT")"
 ssh "$SSH_ALIAS" "mkdir -p $(printf '%q' "$REMOTE_ROOT")"
 
+# A spec venv lives outside the project entirely, keyed only by its own
+# content, so it can be shared/reused across profiles/repos -- a plain-name
+# venv stays project-relative, same as always.
+if [[ "$VENV_IS_SPEC" -eq 1 ]]; then
+    REMOTE_VENV_DIR="$(ssh "$SSH_ALIAS" "echo \$HOME/.venvs/venv-$VENV_SPEC_HASH")"
+else
+    REMOTE_VENV_DIR="$REMOTE_ROOT/$VENV_NAME"
+fi
+
 # A profile's `local-home` (see profile.py) pins the project directory on
 # this machine explicitly; without one, use CWD.
 PROJECT_DIR="${PROFILE_LOCAL_HOME:-$PWD}"
@@ -152,15 +184,24 @@ SYNC_QUIET_FLAG=()
 [[ "$QUIET" -eq 1 ]] && SYNC_QUIET_FLAG=(--quiet)
 bash "$SCRIPT_DIR/sync-remote.sh" "$SSH_ALIAS" "$REMOTE_ROOT" "$PROJECT_DIR" --profile "$PROFILE_NAME" --extra "$HOME/.local/hack:push-only" "${SYNC_QUIET_FLAG[@]}"
 
-REMOTE_VENV_DIR="$REMOTE_ROOT/$VENV_NAME"
 if ! ssh "$SSH_ALIAS" "test -d $(printf '%q' "$REMOTE_VENV_DIR")"; then
-    if [[ "$VENV_SPECIFIED" -eq 1 ]]; then
+    if [[ "$VENV_IS_SPEC" -eq 1 ]]; then
+        [[ "$QUIET" -ne 1 ]] && echo "venv not found at $SSH_ALIAS:$REMOTE_VENV_DIR, creating from spec..."
+        SPEC_TMP="$(mktemp)"
+        printf '%s' "$VENV_SPEC_JSON" > "$SPEC_TMP"
+        REMOTE_SPEC_FILE="/tmp/venv-spec-$VENV_SPEC_HASH.json"
+        scp "$SCRIPT_DIR/create-venv-from-spec.sh" "$SSH_ALIAS:/tmp/"
+        scp "$SPEC_TMP" "$SSH_ALIAS:$REMOTE_SPEC_FILE"
+        rm -f "$SPEC_TMP"
+        ssh "$SSH_ALIAS" "bash /tmp/create-venv-from-spec.sh $(printf '%q' "$REMOTE_VENV_DIR") $(printf '%q' "$REMOTE_SPEC_FILE") $(printf '%q' "$REMOTE_ROOT")"
+    elif [[ "$VENV_SPECIFIED" -eq 1 ]]; then
         echo "ERROR: venv '$VENV_NAME' not found at $SSH_ALIAS:$REMOTE_VENV_DIR" >&2
         exit 1
+    else
+        [[ "$QUIET" -ne 1 ]] && echo "venv not found at $SSH_ALIAS:$REMOTE_VENV_DIR, creating..."
+        scp "$SCRIPT_DIR/create-venv.sh" "$SSH_ALIAS:/tmp/"
+        ssh "$SSH_ALIAS" "bash /tmp/create-venv.sh $(printf '%q' "$REMOTE_VENV_DIR")"
     fi
-    [[ "$QUIET" -ne 1 ]] && echo "venv not found at $SSH_ALIAS:$REMOTE_VENV_DIR, creating..."
-    scp "$SCRIPT_DIR/create-venv.sh" "$SSH_ALIAS:/tmp/"
-    ssh "$SSH_ALIAS" "bash /tmp/create-venv.sh $(printf '%q' "$REMOTE_VENV_DIR")"
 fi
 
 REMOTE_CMD="$1"
@@ -184,7 +225,7 @@ done
 # passed as a single literal argument.
 INIT_SEGMENT=""
 [[ -n "$PROFILE_INITIALIZER" ]] && INIT_SEGMENT="$PROFILE_INITIALIZER && "
-REMOTE_SHELL_CMD="$(printf '%scd %q && source %q/bin/activate && %s%q' "$EXTRA_EXPORTS" "$REMOTE_ROOT" "$VENV_NAME" "$INIT_SEGMENT" "$REMOTE_CMD")"
+REMOTE_SHELL_CMD="$(printf '%scd %q && source %q/bin/activate && %s%q' "$EXTRA_EXPORTS" "$REMOTE_ROOT" "$REMOTE_VENV_DIR" "$INIT_SEGMENT" "$REMOTE_CMD")"
 for arg in "$@" "${APPEND_ARGS[@]}"; do
     REMOTE_SHELL_CMD+="$(printf ' %q' "$arg")"
 done

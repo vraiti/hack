@@ -54,18 +54,22 @@ REMOTE_ROOT="${2:?Usage: $0 <ssh-alias> <remote-root> [project-dir] [--profile N
 PROJECT_DIR="${3:-}"
 
 if [[ -n "$PROFILE_NAME" ]]; then
-    PROFILE_PATH="$HOME/.local/hack/profiles/$PROFILE_NAME.json"
+    PROFILE_PATH="$HOME/.local/hack/profiles/$PROFILE_NAME.yaml"
     if [[ ! -f "$PROFILE_PATH" ]]; then
         echo "ERROR: profile '$PROFILE_NAME' not found at $PROFILE_PATH" >&2
         exit 1
     fi
+    # jq needs JSON, but profiles are authored as YAML (profile.py) --
+    # convert once up front and query this derived JSON everywhere below
+    # instead of PROFILE_PATH itself.
+    PROFILE_JSON="$(python3 -c 'import json, sys, yaml; json.dump(yaml.safe_load(sys.stdin) or {}, sys.stdout)' < "$PROFILE_PATH")"
 fi
 
 # A profile's `local-home` (see profile.py) pins the project directory on
 # this machine explicitly; an explicit [project-dir] argument still wins
 # over it. Without either, use CWD.
 if [[ -z "$PROJECT_DIR" && -n "$PROFILE_NAME" ]]; then
-    PROJECT_DIR="$(jq -r '.["local-home"] // empty' "$PROFILE_PATH")"
+    PROJECT_DIR="$(jq -r '.["local-home"] // empty' <<< "$PROFILE_JSON")"
 fi
 PROJECT_DIR="${PROJECT_DIR:-$PWD}"
 
@@ -73,9 +77,9 @@ HAVE_PROFILE_SYNC=0
 if [[ -n "$PROFILE_NAME" ]]; then
     # A profile without a `sync` key falls back to repos.txt below -- only a
     # profile that actually defines `sync` (even as `{}`) uses it as-is.
-    if [[ "$(jq 'has("sync")' "$PROFILE_PATH")" == "true" ]]; then
+    if [[ "$(jq 'has("sync")' <<< "$PROFILE_JSON")" == "true" ]]; then
         HAVE_PROFILE_SYNC=1
-        mapfile -t ENTRIES < <(jq -r '.sync | to_entries[] | "\(.key):\(.value)"' "$PROFILE_PATH")
+        mapfile -t ENTRIES < <(jq -r '.sync | to_entries[] | "\(.key):\(.value)"' <<< "$PROFILE_JSON")
     fi
 fi
 
@@ -193,11 +197,11 @@ check_dependency() {
     echo "$upstream_head" > "$marker"
 }
 
-if [[ -n "$PROFILE_NAME" ]] && [[ "$(jq 'has("dependencies")' "$PROFILE_PATH")" == "true" ]]; then
+if [[ -n "$PROFILE_NAME" ]] && [[ "$(jq 'has("dependencies")' <<< "$PROFILE_JSON")" == "true" ]]; then
     while IFS=$'\t' read -r sync_dir upstream_dir hook; do
         [[ -z "$sync_dir" ]] && continue
         check_dependency "$sync_dir" "$upstream_dir" "$hook"
-    done < <(jq -r '.dependencies // {} | to_entries[] | .key as $dir | .value | to_entries[] | [$dir, .key, .value] | @tsv' "$PROFILE_PATH")
+    done < <(jq -r '.dependencies // {} | to_entries[] | .key as $dir | .value | to_entries[] | [$dir, .key, .value] | @tsv' <<< "$PROFILE_JSON")
 fi
 
 # `git archive` only emits an empty directory for a submodule path (it's a

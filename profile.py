@@ -1,27 +1,47 @@
 #!/usr/bin/env python3
 # PYTHON_ARGCOMPLETE_OK
-"""Manages run-remote.sh profiles: JSON files under ~/.local/hack/profiles/,
+"""Manages run-remote.sh profiles: YAML files under ~/.local/hack/profiles/,
 selectable via `run-remote.sh --profile <name>`."""
 import argparse
-import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
 import argcomplete
+import yaml
 
 VALID_SYNC_LABELS = {"default", "site-package", "push-only"}
 PROFILE_DIR = Path.home() / ".local" / "hack" / "profiles"
 SECRETS_DIR = PROFILE_DIR / "secrets"
 
-SINGULAR_KEYS = {"venv", "host", "home", "local-home", "initializer"}
-REPEATABLE_KEYS = {"env", "secret", "sync", "include", "dependency", "command"}
+# A venv=TYPE:CONTENT token (TYPE one of these) builds a venv *spec* --
+# {content: type}, insertion order preserved -- run-remote.sh hashes it
+# (order-sensitive: installs can be order-dependent) and builds a fresh
+# venv from scratch under ~/.venvs/venv-<hash> on the remote the first time
+# that exact spec is seen, see create-venv-from-spec.sh. A bare venv=NAME
+# (no colon, or a TYPE not in this set) is the original plain venv name --
+# a directory under the remote project root, created empty and reused as-is.
+VENV_SPEC_TYPES = {"python", "package", "requirements", "script"}
+
+SINGULAR_KEYS = {"host", "home", "local-home", "initializer"}
+REPEATABLE_KEYS = {"venv", "env", "secret", "sync", "include", "dependency", "command"}
 VALID_KEYS = SINGULAR_KEYS | REPEATABLE_KEYS
 
 CREATE_USAGE = (
     "%(prog)s <profile-name> [key=value ...] [-- CMD [args...]]\n\n"
-    "  venv=NAME              Remote venv name\n"
+    "  venv=NAME              Remote venv name (a directory under the project root)\n"
+    "  venv=TYPE:CONTENT      Venv spec entry instead of a plain name (repeatable, order\n"
+    "                         matters -- installs can be order-dependent): a fresh venv is\n"
+    "                         built once per distinct spec and cached at ~/.venvs on the\n"
+    "                         remote, shared across any profile with the identical spec.\n"
+    "                         TYPE is one of:\n"
+    "                           python:VERSION        CPython version to create the venv with\n"
+    "                           package:NAME           `uv pip install NAME`\n"
+    "                           requirements:PATH      `uv pip install -r PATH`\n"
+    "                           script:CMD             bash -c CMD, run inside the venv\n"
+    "                         e.g. venv=python:3.11 venv=requirements:requirements.txt\n"
+    "                         venv=\"script:pip install -e .[dev]\"\n"
     "  env=VAR=value          Extra remote env var (repeatable, or comma-separated: env=A=1,B=2)\n"
     "  secret=VAR=value       Extra remote env var kept out of the (git-tracked) profile JSON --\n"
     "                         written to profiles/secrets/<name>.txt (gitignored) instead, and\n"
@@ -47,7 +67,7 @@ CREATE_USAGE = (
 def list_profile_names():
     if not PROFILE_DIR.is_dir():
         return []
-    return sorted(p.stem for p in PROFILE_DIR.glob("*.json"))
+    return sorted(p.stem for p in PROFILE_DIR.glob("*.yaml"))
 
 
 def profile_name_completer(prefix, **_kwargs):
@@ -94,7 +114,7 @@ def parse_args(argv):
 
     subparsers.add_parser("ls", help="List profile names")
 
-    show = subparsers.add_parser("get", help="Print a profile's resolved JSON")
+    show = subparsers.add_parser("get", help="Print a profile's resolved YAML")
     show.add_argument("profile_name").completer = profile_name_completer
 
     delete = subparsers.add_parser("rm", help="Delete a profile")
@@ -118,9 +138,38 @@ def parse_kv_tokens(tokens):
             sys.exit(1)
         if key in SINGULAR_KEYS:
             singular[key] = value
+        elif key == "venv":
+            # Not comma-split like other repeatable keys -- a `script:`
+            # entry's shell command can legitimately contain commas.
+            repeatable[key].append(value)
         else:
             repeatable[key].extend(value.split(","))
     return singular, repeatable
+
+
+def build_venv(venv_args):
+    if not venv_args:
+        return None
+
+    # A single token that isn't itself a recognized TYPE:CONTENT pair is
+    # the original plain venv name, kept as a bare string for backward
+    # compatibility (and because a one-entry spec still needs its TYPE
+    # prefix to mean anything -- "venv=myvenv" has no colon at all).
+    if len(venv_args) == 1:
+        type_, sep, _ = venv_args[0].partition(":")
+        if not sep or type_ not in VENV_SPEC_TYPES:
+            return venv_args[0]
+
+    spec = {}
+    for token in venv_args:
+        type_, sep, content = token.partition(":")
+        if not sep or type_ not in VENV_SPEC_TYPES:
+            print(f"ERROR: expected venv=TYPE:CONTENT (TYPE one of "
+                  f"{', '.join(sorted(VENV_SPEC_TYPES))}) when giving more than one "
+                  f"venv= entry, got 'venv={token}'", file=sys.stderr)
+            sys.exit(1)
+        spec[content] = type_
+    return spec
 
 
 def build_env(env_args):
@@ -158,7 +207,7 @@ def build_dependencies(dependency_args):
 
 
 def profile_path(name):
-    return PROFILE_DIR / f"{name}.json"
+    return PROFILE_DIR / f"{name}.yaml"
 
 
 def secrets_path(name):
@@ -184,14 +233,14 @@ def load_profile(name):
     if not path.is_file():
         print(f"ERROR: profile '{name}' not found at {path}", file=sys.stderr)
         sys.exit(1)
-    return json.loads(path.read_text())
+    return yaml.safe_load(path.read_text()) or {}
 
 
 def load_profile_if_exists(name):
     path = profile_path(name)
     if not path.is_file():
         return {}
-    return json.loads(path.read_text())
+    return yaml.safe_load(path.read_text()) or {}
 
 
 def build_own(kv_tokens, command):
@@ -203,8 +252,9 @@ def build_own(kv_tokens, command):
     # into `own` at all -- it's written to its own gitignored file by the
     # caller, never merged into the JSON dict.
     own = {}
-    if singular.get("venv"):
-        own["venv"] = singular["venv"]
+    venv = build_venv(repeatable["venv"])
+    if venv is not None:
+        own["venv"] = venv
     if repeatable["env"]:
         own["env"] = build_env(repeatable["env"])
     if singular.get("host"):
@@ -232,7 +282,7 @@ def build_own(kv_tokens, command):
 def write_profile(name, merged):
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     path = profile_path(name)
-    path.write_text(json.dumps(merged, indent=2) + "\n")
+    path.write_text(yaml.dump(merged, sort_keys=False, default_flow_style=False, allow_unicode=True))
     return path
 
 
@@ -264,7 +314,7 @@ def cmd_mk(args):
 
 def cmd_mod(args):
     # No key=value/include/command args at all -- open the profile's raw
-    # JSON in an editor instead of doing a no-op merge.
+    # YAML in an editor instead of doing a no-op merge.
     if not args.rest and not args.command:
         path = profile_path(args.profile_name)
         PROFILE_DIR.mkdir(parents=True, exist_ok=True)
@@ -304,7 +354,7 @@ def cmd_ls(_args):
 
 def cmd_get(args):
     profile = load_profile(args.profile_name)
-    print(json.dumps(profile, indent=2))
+    print(yaml.dump(profile, sort_keys=False, default_flow_style=False, allow_unicode=True), end="")
 
 
 def cmd_rm(args):

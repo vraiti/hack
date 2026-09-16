@@ -1,0 +1,10 @@
+command:
+- vllm-omni-aux/utils/deploy.py
+- personaplex
+- 1gpu.yaml
+- -i
+sync:
+  vllm: site-package
+  vllm-omni: default
+  vllm-omni-aux: default
+initializer: vllm-omni-aux/utils/clean-traces.sh
