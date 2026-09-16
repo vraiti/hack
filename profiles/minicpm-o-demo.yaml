@@ -8,4 +8,5 @@ venv:
   python: 3.12
   package: torch==2.8.0
   package: torch==2.8.0
+  package: huggingface_hub
   requirements: MiniCPM-o-Demo/requirements.txt
