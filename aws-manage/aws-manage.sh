@@ -20,7 +20,9 @@ Commands:
                                     to match the $AMI_NAME base state via
                                     create-from-rhel10-ami.sh. Run 'snapshot'
                                     afterward to publish it as $AMI_NAME.
-  start [alias]                    Start the stopped instance and poll for SSH
+  start [alias] [--no-timeout]     Start the stopped instance and poll for SSH.
+                                    --no-timeout retries capacity errors
+                                    forever instead of giving up after 300s.
   stop [alias]                     Stop the running instance
   delete [alias]                   Terminate the instance and remove SSH config
   mv <old-alias> <new-alias>       Re-alias the instance locally
@@ -389,11 +391,24 @@ cmd_stop() {
 }
 
 cmd_start() {
-    set_alias "${1:-}"
+    local no_timeout=0
+    local positional=()
+    for arg in "$@"; do
+        if [[ "$arg" == "--no-timeout" ]]; then
+            no_timeout=1
+        else
+            positional+=("$arg")
+        fi
+    done
+    set_alias "${positional[0]:-}"
     local id
     id=$(get_instance_id)
     echo "Starting $id..."
-    aws_retry_on_capacity aws ec2 start-instances --instance-ids "$id" --output text
+    if [[ "$no_timeout" -eq 1 ]]; then
+        aws_retry_on_capacity --no-timeout aws ec2 start-instances --instance-ids "$id" --output text
+    else
+        aws_retry_on_capacity aws ec2 start-instances --instance-ids "$id" --output text
+    fi
 
     echo "Waiting for running state..."
     aws ec2 wait instance-running --instance-ids "$id"

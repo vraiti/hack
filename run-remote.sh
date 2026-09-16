@@ -12,19 +12,11 @@ mkdir -p "$LOG_DIR"
 exec > >(tee -a "$LOG_DIR/run-remote.log") 2>&1
 
 resolve_alias() {
-    # Aliases live as `Host` lines inside files under ~/.ssh/config.d/ (e.g.
-    # aws-manage's consolidated config.d/awsm, which holds one block per
-    # managed instance) -- not one alias per file, so this must enumerate
-    # actual Host lines, not filenames.
-    local hosts
-    hosts=$(grep -hoE '^Host[[:space:]]+\S+' ~/.ssh/config.d/* 2>/dev/null | awk '{print $2}' | sort -u)
-    local count=0
-    [[ -n "$hosts" ]] && count=$(wc -l <<< "$hosts")
-    if [[ "$count" -eq 1 ]]; then
-        echo "$hosts"
-        return 0
-    fi
-    return 1
+    # Delegates to aws-manage's own default-host resolution (the sole
+    # `Host` block in its consolidated config.d/awsm) rather than scanning
+    # every file under ~/.ssh/config.d/ -- only aws-manage aliases count
+    # as an implicit default here.
+    "$SCRIPT_DIR/aws-manage/default-host.sh"
 }
 
 # -q suppresses the profile dump/venv-creation/reconnect chatter. A literal
@@ -134,8 +126,7 @@ if [[ -n "${PROFILE_HOST:-}" ]]; then
 elif SSH_ALIAS=$(resolve_alias); then
     :
 else
-    echo "ERROR: multiple instances exist, set \"host\" in the profile" >&2
-    ls ~/.ssh/config.d/ >&2
+    echo "ERROR: could not resolve a default host, set \"host\" in the profile" >&2
     exit 1
 fi
 

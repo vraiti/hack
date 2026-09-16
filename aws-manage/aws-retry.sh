@@ -5,7 +5,15 @@
 # instead of failing the whole command outright. Any other error is not
 # retried.
 
+# A leading `--no-timeout` disables the deadline below, retrying capacity
+# errors forever instead of giving up after 300s.
 aws_retry_on_capacity() {
+    local no_timeout=0
+    if [[ "${1:-}" == "--no-timeout" ]]; then
+        no_timeout=1
+        shift
+    fi
+
     local interval=1
     local timeout=300
     local deadline=$(( $(date +%s) + timeout ))
@@ -18,7 +26,7 @@ aws_retry_on_capacity() {
         fi
 
         if printf '%s\n' "$output" | grep -qE 'InsufficientInstanceCapacity|InsufficientHostCapacity|InsufficientCapacity'; then
-            if [[ $(date +%s) -ge $deadline ]]; then
+            if [[ "$no_timeout" -ne 1 && $(date +%s) -ge $deadline ]]; then
                 echo "No capacity available after ${timeout}s, giving up." >&2
                 printf '%s\n' "$output" >&2
                 return 1
