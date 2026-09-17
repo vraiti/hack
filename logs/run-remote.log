@@ -264,3 +264,6 @@ M	logs/run-remote.log
 M	profiles/minicpm-o-demo.yaml
 Your branch is up to date with 'origin/AUTOCOMMIT/main'.
 Auto-committing uncommitted changes in /home/vraiti/.local/hack on AUTOCOMMIT/main...
+WARNING: /home/vraiti/.local/hack/MiniCPM-o-Demo does not exist, skipping
+WARNING: /home/vraiti/.local/hack/vllm-omni-aux does not exist, skipping
+venv not found at dev:/home/ec2-user/.venvs/venvs/venv-a8d93490bd6c2fba2f121844fd348156453a8885f8ecf260b3892441de6c8a51, creating from spec...
