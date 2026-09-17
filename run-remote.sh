@@ -198,6 +198,29 @@ fi
 # every time, including when the spec changed since the last run.
 ssh "$SSH_ALIAS" "mkdir -p $(printf '%q' "$(dirname "$REMOTE_VENV_DIR")") && ln -sfn $(printf '%q' "$REAL_VENV_DIR") $(printf '%q' "$REMOTE_VENV_DIR")"
 
+# Garbage-collect any content-addressed venv under ~/.venvs/venvs that no
+# ~/.venvs/<profile-name> symlink points at any more -- e.g. left behind by
+# a profile whose spec has since changed, or a profile that no longer
+# exists. Run after the symlink above is confirmed/repointed, so this run's
+# own venv is never the thing getting swept. Base64-encoded like the
+# launcher/watch commands below -- this is a multi-line script, not a
+# single flat command, and needs to survive ssh's flatten-and-reparse.
+GC_SCRIPT='
+venvs_dir="$HOME/.venvs/venvs"
+[ -d "$venvs_dir" ] || exit 0
+referenced=$(find "$HOME/.venvs" -maxdepth 1 -type l -exec readlink -f {} \; | sort -u)
+for d in "$venvs_dir"/*/; do
+    d="${d%/}"
+    [ -d "$d" ] || continue
+    if ! grep -qxF "$d" <<< "$referenced"; then
+        echo "Removing orphaned venv: $d"
+        rm -rf "$d"
+    fi
+done
+'
+gc_b64="$(printf '%s' "$GC_SCRIPT" | base64 -w0)"
+ssh "$SSH_ALIAS" "bash -c \"\$(echo $gc_b64 | base64 -d)\""
+
 REMOTE_CMD="$1"
 shift
 
