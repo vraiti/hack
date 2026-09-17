@@ -29,3 +29,219 @@ M	logs/run-remote.log
 M	profiles/minicpm-o-demo.yaml
 Your branch is up to date with 'origin/AUTOCOMMIT/main'.
 Auto-committing uncommitted changes in /home/vraiti/.local/hack on AUTOCOMMIT/main...
+WARNING: /home/vraiti/.local/hack/MiniCPM-o-Demo does not exist, skipping
+WARNING: /home/vraiti/.local/hack/vllm-omni-aux does not exist, skipping
+venv not found at dev:/home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12, creating from spec...
+Creating venv at /home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12 (python 3.12)...
+Using CPython 3.12.14 interpreter at: /usr/bin/python3.12
+Creating virtual environment at: .venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12
+Activate with: source .venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12/bin/activate
+Installing package: torch==2.8.0
+Using Python 3.12.14 environment at: /home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12
+Resolved 25 packages in 3ms
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 25 packages in 881ms
+ + filelock==4.0.0
+ + fsspec==2026.7.0
+ + jinja2==3.1.6
+ + markupsafe==3.0.3
+ + mpmath==1.3.0
+ + networkx==3.6.1
+ + nvidia-cublas-cu12==12.8.4.1
+ + nvidia-cuda-cupti-cu12==12.8.90
+ + nvidia-cuda-nvrtc-cu12==12.8.93
+ + nvidia-cuda-runtime-cu12==12.8.90
+ + nvidia-cudnn-cu12==9.10.2.21
+ + nvidia-cufft-cu12==11.3.3.83
+ + nvidia-cufile-cu12==1.13.1.3
+ + nvidia-curand-cu12==10.3.9.90
+ + nvidia-cusolver-cu12==11.7.3.90
+ + nvidia-cusparse-cu12==12.5.8.93
+ + nvidia-cusparselt-cu12==0.7.1
+ + nvidia-nccl-cu12==2.27.3
+ + nvidia-nvjitlink-cu12==12.8.93
+ + nvidia-nvtx-cu12==12.8.90
+ + setuptools==84.0.0
+ + sympy==1.14.0
+ + torch==2.8.0
+ + triton==3.4.0
+ + typing-extensions==4.16.0
+Installing package: huggingface_hub
+Using Python 3.12.14 environment at: /home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12
+Resolved 15 packages in 2ms
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 12 packages in 15ms
+ + anyio==4.15.1
+ + certifi==2026.7.22
+ + click==8.5.0
+ + h11==0.16.0
+ + hf-xet==1.6.0
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + huggingface-hub==1.32.0
+ + idna==3.19
+ + packaging==26.3
+ + pyyaml==6.0.3
+ + tqdm==4.70.1
+Installing package: setuptools<82
+Using Python 3.12.14 environment at: /home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12
+Resolved 1 package in 55ms
+Downloading setuptools (1.0MiB)
+ Downloaded setuptools
+Prepared 1 package in 68ms
+Uninstalled 1 package in 4ms
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 1 package in 20ms
+ - setuptools==84.0.0
+ + setuptools==81.0.0
+Installing requirements from MiniCPM-o-Demo/requirements.txt
+Using Python 3.12.14 environment at: /home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12
+Resolved 100 packages in 10ms
+Uninstalled 1 package in 1ms
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 64 packages in 515ms
+ + accelerate==1.12.0
+ + annotated-doc==0.0.5
+ + annotated-types==0.8.0
+ + audioread==3.1.0
+ + cffi==2.1.1
+ + charset-normalizer==3.5.1
+ + cloudpickle==3.1.2
+ + coloredlogs==15.0.1
+ + decorator==5.3.1
+ + decord==0.6.0
+ + einops==0.8.1
+ + fastapi==0.141.1
+ + flatbuffers==25.12.19
+ - huggingface-hub==1.32.0
+ + huggingface-hub==0.36.2
+ + humanfriendly==10.0
+ + hyperpyyaml==1.2.3
+ + imageio==2.37.4
+ + imageio-ffmpeg==0.6.0
+ + iniconfig==2.3.0
+ + joblib==1.6.0
+ + librosa==0.9.0
+ + llvmlite==0.49.0
+ + markdown==3.10.3
+ + minicpmo-utils==1.0.6
+ + ml-dtypes==0.6.0
+ + moviepy==2.1.2
+ + narwhals==2.26.0
+ + numba==0.67.0
+ + numpy==2.5.3
+ + onnx==1.22.0
+ + onnxruntime==1.21.0
+ + pillow==10.4.0
+ + platformdirs==4.11.9
+ + pluggy==1.6.0
+ + pooch==1.9.0
+ + proglog==0.1.12
+ + protobuf==7.36.1
+ + psutil==7.2.2
+ + pycparser==3.0
+ + pydantic==2.13.5
+ + pydantic-core==2.46.5
+ + pygments==2.21.0
+ + pytest==9.1.1
+ + pytest-asyncio==1.4.0
+ + python-dotenv==1.2.3
+ + python-multipart==0.0.32
+ + regex==2026.9.10
+ + requests==2.34.2
+ + resampy==0.4.3
+ + ruamel-yaml==0.18.17
+ + ruamel-yaml-clib==0.2.15
+ + safetensors==0.8.0
+ + scikit-learn==1.9.1
+ + scipy==1.18.1
+ + soundfile==0.12.1
+ + starlette==1.6.0
+ + threadpoolctl==3.7.0
+ + tokenizers==0.21.4
+ + torchaudio==2.Done.
+11.0
+ + transformers==4.51.0
+ + typing-inspection==0.4.4
+ + urllib3==2.8.0
+ + uvicorn==0.53.0
+ + websockets==17.1
+Fetching 54 files:   0%|          | 0/54 [00:00<?, ?it/s]Fetching 54 files: 100%|██████████| 54/54 [00:00<00:00, 8771.98it/s]
+Waiting for worker to become healthy...
+ERROR: process 4029 died
+---- tmp/worker_0.log ----
+2026-09-17 13:53:32,350 [WARNING] config: config.json 不存在 (/home/ec2-user/vraiti/MiniCPM-o-Demo/config.json)，使用全部默认值。加载模型的进程请通过 --model-path 或 config.json 提供 model.model_path。
+2026-09-17 13:53:32,351 [INFO] worker: Starting Worker on port 22400, GPU 0
+INFO:     Started server process [4029]
+INFO:     Waiting for application startup.
+2026-09-17 13:53:33,989 [INFO] pytorch_backend: [GPU 0] Loading model from /home/ec2-user/.cache/huggingface/hub/models--openbmb--MiniCPM-o-4_5/snapshots/503e754207c94da6bb26850b4469f367c9ea3582...
+2026-09-17 13:53:33,989 [INFO] core.processors.unified: Loading unified model: /home/ec2-user/.cache/huggingface/hub/models--openbmb--MiniCPM-o-4_5/snapshots/503e754207c94da6bb26850b4469f367c9ea3582
+/home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12/lib64/python3.12/site-packages/librosa/util/files.py:10: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_filename
+/home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12/lib64/python3.12/site-packages/transformers/models/auto/image_processing_auto.py:604: FutureWarning: The image_processor_class argument is deprecated and will be removed in v4.42. Please use `slow_image_processor_class`, or `fast_image_processor_class` instead
+  warnings.warn(
+2026-09-17 13:53:39,698 [INFO] core.processors.unified: [Attention] auto -> sdpa (flash-attn unavailable, using PyTorch built-in SDPA. For flash_attention_2, install: MAX_JOBS=16 pip install 'flash-attn>=2.6' --no-build-isolation)
+2026-09-17 13:53:39,700 [INFO] MiniCPMO45.configuration_minicpmo: vision_config is None, using default vision config
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:00<00:02,  1.27it/s]Loading checkpoint shards:  50%|█████     | 2/4 [00:01<00:01,  1.21it/s]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:03<00:01,  1.13s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:04<00:00,  1.09s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:04<00:00,  1.04s/it]
+2026-09-17 13:53:49,515 [INFO] core.processors.unified: Base model loaded in 15.5s, attn_implementation=sdpa, quantized=False
+2026-09-17 13:53:49,515 [INFO] core.processors.unified: Initializing unified mode...
+2026-09-17 13:53:49,515 [INFO] MiniCPMO45.modeling_minicpmo_unified: Initializing unified mode...
+2026-09-17 13:53:49,515 [INFO] MiniCPMO45.modeling_minicpmo_unified: Chat vocoder config: token2wav
+2026-09-17 13:53:49,515 [WARNING] MiniCPMO45.modeling_minicpmo_unified: audio tokenizer type is set to s3tokenizer_step_audio
+ERROR:    Traceback (most recent call last):
+  File "/home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12/lib64/python3.12/site-packages/starlette/routing.py", line 648, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ec2-user/vraiti/MiniCPM-o-Demo/worker.py", line 125, in lifespan
+    await asyncio.to_thread(worker.load_model)
+  File "/usr/lib64/python3.12/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ec2-user/vraiti/MiniCPM-o-Demo/core/processors/pytorch_backend.py", line 64, in load_model
+    self.processor = UnifiedProcessor(
+                     ^^^^^^^^^^^^^^^^^
+  File "/home/ec2-user/vraiti/MiniCPM-o-Demo/core/processors/unified.py", line 1258, in __init__
+    super().__init__(model_path=model_path, device=device)
+  File "/home/ec2-user/vraiti/MiniCPM-o-Demo/core/processors/base.py", line 126, in __init__
+    self._load_model()
+  File "/home/ec2-user/vraiti/MiniCPM-o-Demo/core/processors/unified.py", line 1398, in _load_model
+    self.model.init_unified(
+  File "/home/ec2-user/vraiti/MiniCPM-o-Demo/MiniCPMO45/modeling_minicpmo_unified.py", line 362, in init_unified
+    self.init_token2wav(streaming=True)
+  File "/home/ec2-user/vraiti/MiniCPM-o-Demo/MiniCPMO45/modeling_minicpmo_unified.py", line 290, in init_token2wav
+    from stepaudio2 import Token2wav
+  File "/home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12/lib64/python3.12/site-packages/stepaudio2/__init__.py", line 4, in <module>
+    from .token2wav import Token2wav
+  File "/home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12/lib64/python3.12/site-packages/stepaudio2/token2wav.py", line 6, in <module>
+    import torchaudio
+  File "/home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12/lib64/python3.12/site-packages/torchaudio/__init__.py", line 7, in <module>
+    from . import _extension  # noqa  # usort: skip
+    ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12/lib64/python3.12/site-packages/torchaudio/_extension/__init__.py", line 30, in <module>
+    _IS_TORCHAUDIO_EXT_AVAILABLE = _load_lib("_torchaudio")
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12/lib64/python3.12/site-packages/torchaudio/_extension/utils.py", line 56, in _load_lib
+    torch.ops.load_library(paths[0])
+  File "/home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12/lib64/python3.12/site-packages/torch/_ops.py", line 1478, in load_library
+    ctypes.CDLL(path)
+  File "/usr/lib64/python3.12/ctypes/__init__.py", line 379, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: /home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95b5e37ecbea54c59b01abf65f12/lib/python3.12/site-packages/torchaudio/lib/_torchaudio.abi3.so: undefined symbol: torch_library_impl
+
+ERROR:    Application startup failed. Exiting.
+Connection to 3.22.221.247 closed.
