@@ -90,11 +90,13 @@ PROFILE_JSON="$(python3 -c 'import json, sys, yaml; json.dump(yaml.safe_load(sys
 # TYPE one of "python"/"package"/"requirements"/"script", in the order they
 # should be applied -- see create-venv-from-spec.sh. There's no more
 # "plain name pointing at an existing/default venv directory" mode: every
-# profile must spell out how to build its venv. It's content-addressed
-# (SHA256 of its canonical JSON, not an order-independent hash -- installs
-# can be order-dependent) and cached at $REMOTE_ROOT/.venvs/venv-<hash>,
-# shared across any profile that happens to specify the identical spec and
-# REMOTE_ROOT.
+# profile must spell out how to build its venv. The real venv is
+# content-addressed (SHA256 of its canonical JSON, not an order-independent
+# hash -- installs can be order-dependent) at
+# ~/.venvs/venvs/venv-<hash>, shared across any profile that happens to
+# specify the identical spec; ~/.venvs/<profile-name> is kept as a symlink
+# to it purely for debugability (a readable name in `ps`/paths instead of a
+# hash), see below.
 VENV_TYPE="$(jq -r '.venv | type' <<< "$PROFILE_JSON")"
 if [[ "$VENV_TYPE" != "array" ]]; then
     echo "ERROR: profile '$PROFILE_NAME' has no venv spec -- \"venv\" must be a list of" \
@@ -153,10 +155,17 @@ fi
 REMOTE_ROOT="$(ssh "$SSH_ALIAS" "echo $REMOTE_ROOT")"
 ssh "$SSH_ALIAS" "mkdir -p $(printf '%q' "$REMOTE_ROOT")"
 
-# Nested under the project root (not the remote $HOME) so it travels with
-# the project -- still keyed only by its own spec content, so it's reused
-# across any profile that shares both REMOTE_ROOT and the identical spec.
-REMOTE_VENV_DIR="$REMOTE_ROOT/.venvs/venv-$VENV_SPEC_HASH"
+REMOTE_HOME="$(ssh "$SSH_ALIAS" 'echo $HOME')"
+
+# REAL_VENV_DIR is the actual, content-addressed venv (reused across any
+# profile with the identical spec); REMOTE_VENV_DIR -- what everything below
+# actually activates -- is a per-profile symlink to it, so a stack trace,
+# `ps`, or a manual `ssh host source ~/.venvs/<profile>/bin/activate` shows
+# this profile's name instead of a hash. The symlink is (re)pointed at
+# REAL_VENV_DIR every run (see below), so it always tracks the profile's
+# current spec even if that spec changes between runs.
+REAL_VENV_DIR="$REMOTE_HOME/.venvs/venvs/venv-$VENV_SPEC_HASH"
+REMOTE_VENV_DIR="$REMOTE_HOME/.venvs/$PROFILE_NAME"
 
 # A profile's `local-home` (see profile.py) pins the project directory on
 # this machine explicitly; without one, use CWD.
@@ -172,16 +181,22 @@ SYNC_QUIET_FLAG=()
 [[ "$QUIET" -eq 1 ]] && SYNC_QUIET_FLAG=(--quiet)
 bash "$SCRIPT_DIR/sync-remote.sh" "$SSH_ALIAS" "$REMOTE_ROOT" "$PROJECT_DIR" --profile "$PROFILE_NAME" --extra "$HOME/.local/hack:push-only" "${SYNC_QUIET_FLAG[@]}"
 
-if ! ssh "$SSH_ALIAS" "test -d $(printf '%q' "$REMOTE_VENV_DIR")"; then
-    [[ "$QUIET" -ne 1 ]] && echo "venv not found at $SSH_ALIAS:$REMOTE_VENV_DIR, creating from spec..."
+if ! ssh "$SSH_ALIAS" "test -d $(printf '%q' "$REAL_VENV_DIR")"; then
+    [[ "$QUIET" -ne 1 ]] && echo "venv not found at $SSH_ALIAS:$REAL_VENV_DIR, creating from spec..."
     SPEC_TMP="$(mktemp)"
     printf '%s' "$VENV_SPEC_JSON" > "$SPEC_TMP"
     REMOTE_SPEC_FILE="/tmp/venv-spec-$VENV_SPEC_HASH.json"
     scp "$SCRIPT_DIR/create-venv-from-spec.sh" "$SSH_ALIAS:/tmp/"
     scp "$SPEC_TMP" "$SSH_ALIAS:$REMOTE_SPEC_FILE"
     rm -f "$SPEC_TMP"
-    ssh "$SSH_ALIAS" "bash /tmp/create-venv-from-spec.sh $(printf '%q' "$REMOTE_VENV_DIR") $(printf '%q' "$REMOTE_SPEC_FILE") $(printf '%q' "$REMOTE_ROOT")"
+    ssh "$SSH_ALIAS" "bash /tmp/create-venv-from-spec.sh $(printf '%q' "$REAL_VENV_DIR") $(printf '%q' "$REMOTE_SPEC_FILE") $(printf '%q' "$REMOTE_ROOT")"
 fi
+
+# (Re)point this profile's debug symlink at the current spec's real venv --
+# ln -sfn overwrites any previous target atomically rather than erroring or
+# nesting inside a stale symlink, so this is safe to run unconditionally
+# every time, including when the spec changed since the last run.
+ssh "$SSH_ALIAS" "mkdir -p $(printf '%q' "$(dirname "$REMOTE_VENV_DIR")") && ln -sfn $(printf '%q' "$REAL_VENV_DIR") $(printf '%q' "$REMOTE_VENV_DIR")"
 
 REMOTE_CMD="$1"
 shift
