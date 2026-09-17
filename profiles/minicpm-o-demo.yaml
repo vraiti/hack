@@ -7,6 +7,7 @@ sync:
 venv:
 - python: '3.12'
 - package: torch==2.8.0
+- package: torchaudio==2.8.0
 - package: huggingface_hub
 - package: setuptools<82
 - requirements: MiniCPM-o-Demo/requirements.txt

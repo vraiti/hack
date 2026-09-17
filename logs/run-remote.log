@@ -245,3 +245,22 @@ OSError: /home/ec2-user/.venvs/venvs/venv-e9a09b40ce27970201ec75b6c7cdc2b5894e95
 
 ERROR:    Application startup failed. Exiting.
 Connection to 3.22.221.247 closed.
+Using profile 'minicpm-o-demo':
+command:
+- bash
+- vllm-omni-aux/utils/deploy-minicpm-o-demo.sh
+sync:
+  MiniCPM-o-Demo: default
+  vllm-omni-aux: default
+venv:
+- python: '3.12'
+- package: torch==2.8.0
+- package: torchaudio==2.8.0
+- package: huggingface_hub
+- package: setuptools<82
+- requirements: MiniCPM-o-Demo/requirements.txt
+Already on 'AUTOCOMMIT/main'
+M	logs/run-remote.log
+M	profiles/minicpm-o-demo.yaml
+Your branch is up to date with 'origin/AUTOCOMMIT/main'.
+Auto-committing uncommitted changes in /home/vraiti/.local/hack on AUTOCOMMIT/main...
