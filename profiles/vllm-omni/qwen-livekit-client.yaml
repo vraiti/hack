@@ -9,3 +9,8 @@ sync:
   vllm: site-package
   vllm-omni: default
   vllm-omni-aux: default
+command:
+- vllm-omni-aux/utils/deploy.py
+- qwen3-omni
+- 1gpu.yaml
+- --client=vllm-omni-aux/clients/livekit_replay_client.sh
