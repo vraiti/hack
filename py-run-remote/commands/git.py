@@ -123,6 +123,7 @@ def archive_to(repo_dir: str, commit: str, dest_dir: str) -> None:
     binary file content and hold the whole archive in memory at once.
     """
     git_proc = subprocess.Popen(["git", "-C", repo_dir, "archive", commit], stdout=subprocess.PIPE)
+    assert git_proc.stdout is not None  # guaranteed by stdout=PIPE above
     tar_proc = subprocess.Popen(["tar", "-x", "-C", dest_dir], stdin=git_proc.stdout)
     git_proc.stdout.close()  # let tar_proc see EOF/SIGPIPE correctly if it exits first
     tar_proc.wait()
