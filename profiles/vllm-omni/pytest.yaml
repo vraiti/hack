@@ -10,8 +10,4 @@ sync:
   vllm-omni: default
   vllm-omni-aux: default
 command:
-- bash
-- -c
-- |
-  cd vllm-omni
-  pytest
+- vllm-omni-aux/utils/pytest.sh
