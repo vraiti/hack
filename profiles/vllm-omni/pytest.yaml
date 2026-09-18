@@ -1,6 +1,7 @@
 venv:
 - python: 3.14
 - package: vllm==0.29.0
+- package: setuptools_scm
 - package-script: vllm-omni-aux/utils/install-flashinfer-jit-cache.sh
 - package: -e vllm-omni --no-build-isolation
 sync:
