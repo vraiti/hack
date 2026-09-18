@@ -14,16 +14,20 @@ import subprocess
 
 from . import _proc
 
-# Python's equivalent of run-remote.sh's `printf '%q'` -- use this to quote
-# any interpolated value before building a remote_command string below.
+# Use this to quote any interpolated value before building a remote_command
+# string below.
 quote = shlex.quote
 
 
-def run(alias: str, remote_command: str, *, check: bool = True, capture: bool = True) -> subprocess.CompletedProcess:
+def run(alias: str, remote_command: str, *, check: bool = True, capture: bool = True, input: str | None = None) -> subprocess.CompletedProcess:
     """ssh <alias> <remote_command> -- remote_command is shell text executed
     by the remote's login shell, exactly like `ssh alias 'cmd'` on the
-    command line. Build it with quote() for any interpolated values."""
-    return _proc.run(["ssh", alias, remote_command], check=check, capture=capture)
+    command line. Build it with quote() for any interpolated values.
+
+    input, when given, is written to the remote command's stdin -- e.g.
+    run(alias, f"cat > {quote(path)}", input=file_contents) to deliver a
+    small file (like job.json) without a separate scp/rsync call."""
+    return _proc.run(["ssh", alias, remote_command], check=check, capture=capture, input=input)
 
 
 def run_tty(alias: str, remote_command: str) -> int:
@@ -36,15 +40,13 @@ def run_tty(alias: str, remote_command: str) -> int:
 
 
 def run_script(alias: str, script: str, *, background: bool = False, check: bool = True) -> subprocess.CompletedProcess:
-    """Run a multi-line script on the remote (the GC scan, an ad hoc setup
-    step). base64-encodes it first so it survives ssh's flatten-and-reparse
-    of all trailing arguments into one string -- a raw multi-line or
-    quote-heavy script would otherwise need its own quoting pass for every
-    layer of wrapping (nohup, bash -c, ssh itself), and getting one wrong
-    silently breaks things (an earlier `&` vs `&&` precedence bug
-    backgrounded a whole command chain instead of just the intended job).
-    Base64's alphabet has no shell metacharacters, so it survives any
-    number of reparses unmodified."""
+    """Run a multi-line script on the remote (an ad hoc setup step).
+    base64-encodes it first so it survives ssh's flatten-and-reparse of all
+    trailing arguments into one string -- a raw multi-line or quote-heavy
+    script would otherwise need its own quoting pass for every layer of
+    wrapping (nohup, bash -c, ssh itself), and getting one wrong silently
+    breaks things. Base64's alphabet has no shell metacharacters, so it
+    survives any number of reparses unmodified."""
     b64 = base64.b64encode(script.encode()).decode()
     remote_cmd = f'bash -c "$(echo {b64} | base64 -d)"'
     if background:

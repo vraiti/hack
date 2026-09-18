@@ -12,9 +12,9 @@ def sync(src_dir: str, alias: str, dst_dir: str, *, delete: bool = True, exclude
     """rsync -az [--delete] [--exclude=X ...] <src_dir>/ <alias>:<dst_dir>/
 
     src_dir/dst_dir are always synced as directory *contents* (trailing
-    slash added if missing), matching sync-remote.sh's own convention --
-    omitting the slash would nest src_dir's basename inside dst_dir instead
-    of replacing dst_dir's contents with src_dir's.
+    slash added if missing) -- omitting the slash would nest src_dir's
+    basename inside dst_dir instead of replacing dst_dir's contents with
+    src_dir's.
     """
     argv = ["rsync", "-az"]
     if delete:

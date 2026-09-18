@@ -1,9 +1,8 @@
 """Hand-rolled wrapper around the `scp` binary.
 
 Kept external for the same reason as ssh.py -- see UTILS.md. Used only for
-the handful of one-off file pushes run-remote.sh needs before a venv (and
-therefore any Python-native remote helper) exists yet, e.g. shipping
-create-venv-from-spec.sh itself and its spec JSON to /tmp on first use.
+one-off file pushes needed before a venv (and therefore any Python-native
+remote helper) exists yet on a fresh remote host.
 """
 from __future__ import annotations
 

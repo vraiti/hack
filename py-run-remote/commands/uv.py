@@ -42,9 +42,7 @@ def pip_install_requirements(venv_dir: str, requirements_file: str) -> None:
 
 def pip_show(venv_dir: str, package: str) -> dict[str, str]:
     """uv pip show --python <venv_dir>/bin/python3 <package>, parsed into a
-    {field: value} dict (e.g. pip_show(venv, "flashinfer-python")["Version"],
-    replacing install-flashinfer-jit-cache.sh's `grep -oP` on the same
-    output)."""
+    {field: value} dict (e.g. pip_show(venv, "flashinfer-python")["Version"])."""
     result = _proc.run(["uv", "pip", "show", "--python", _venv_python(venv_dir), package])
     fields: dict[str, str] = {}
     for line in result.stdout.splitlines():
