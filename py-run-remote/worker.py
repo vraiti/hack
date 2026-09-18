@@ -10,9 +10,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
+import venvspec
 from models import JobSpec
 
 
@@ -21,8 +24,6 @@ def venv_spec_hash(spec_json: str) -> str:
 
 
 def ensure_venv(job: JobSpec) -> str:
-    import venvspec
-
     spec_json = json.dumps([e.model_dump() for e in job.venv], separators=(",", ":"))
     digest = venv_spec_hash(spec_json)
     real_venv_dir = os.path.join(job.venvs_root, "venvs", f"venv-{digest}")
@@ -60,8 +61,6 @@ def gc_orphaned_venvs(venvs_root: str) -> None:
     for candidate in storage_dir.iterdir():
         if candidate.is_dir() and str(candidate.resolve()) not in referenced:
             print(f"Removing orphaned venv: {candidate}")
-            import shutil
-
             shutil.rmtree(candidate)
 
 
@@ -101,8 +100,6 @@ def daemonize(log_file: str) -> None:
 
 
 def run_job(job: JobSpec, venv_dir: str) -> int:
-    import subprocess
-
     env = dict(os.environ)
     env["VIRTUAL_ENV"] = venv_dir
     env["PATH"] = f"{os.path.join(venv_dir, 'bin')}:{env.get('PATH', '')}"
@@ -113,13 +110,15 @@ def run_job(job: JobSpec, venv_dir: str) -> int:
         # on `&&`-chaining, unlike the main command below.
         subprocess.run(["bash", "-c", job.initializer], cwd=job.project_root, env=env, check=True)
 
-    result = subprocess.run(job.command, cwd=job.project_root, env=env)
+    # Deliberately not check=True -- the whole point is to capture the job's
+    # real exit code ourselves, success or failure, not raise on nonzero.
+    result = subprocess.run(job.command, cwd=job.project_root, env=env, check=False)
     return result.returncode
 
 
 def main() -> None:
     job_path = sys.argv[1]
-    job = JobSpec.model_validate_json(Path(job_path).read_text())
+    job = JobSpec.model_validate_json(Path(job_path).read_text(encoding="utf-8"))
 
     venv_dir = ensure_venv(job)
     gc_orphaned_venvs(job.venvs_root)
@@ -127,10 +126,14 @@ def main() -> None:
     daemonize(job.log_file)
     try:
         exit_code = run_job(job, venv_dir)
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        # Deliberately catches anything: this runs after daemonize(), so the
+        # local watch loop is already blocked waiting on job.exit_file --
+        # any unhandled exception here would leave it waiting forever
+        # instead of getting a (failure) exit code back.
         print(f"ERROR: {e}", file=sys.stderr)
         exit_code = 1
-    Path(job.exit_file).write_text(str(exit_code))
+    Path(job.exit_file).write_text(str(exit_code), encoding="utf-8")
 
 
 if __name__ == "__main__":

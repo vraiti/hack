@@ -11,7 +11,7 @@ import subprocess
 
 
 class CommandError(RuntimeError):
-    def __init__(self, argv, returncode, stdout, stderr):
+    def __init__(self, argv: list[str], returncode: int, stdout: str | None, stderr: str | None):
         self.argv = argv
         self.returncode = returncode
         self.stdout = stdout
@@ -19,7 +19,17 @@ class CommandError(RuntimeError):
         super().__init__(f"command failed ({returncode}): {' '.join(argv)}\n{stderr or ''}")
 
 
-def run(argv: list[str], *, check: bool = True, capture: bool = True, input: str | None = None, cwd: str | None = None) -> subprocess.CompletedProcess:
+# input shadows the input() builtin, matching subprocess.run's own parameter
+# name exactly -- naming parity with the function this wraps is more useful
+# here than avoiding a builtin that library code never calls anyway.
+def run(
+    argv: list[str],
+    *,
+    check: bool = True,
+    capture: bool = True,
+    input: str | None = None,  # pylint: disable=redefined-builtin
+    cwd: str | None = None,
+) -> subprocess.CompletedProcess:
     """Run argv and return the CompletedProcess.
 
     capture=True (default) captures stdout/stderr as text for the caller to
@@ -34,6 +44,7 @@ def run(argv: list[str], *, check: bool = True, capture: bool = True, input: str
         input=input,
         stdout=subprocess.PIPE if capture else None,
         stderr=subprocess.PIPE if capture else None,
+        check=False,  # checked explicitly below instead, to raise CommandError
     )
     if check and result.returncode != 0:
         raise CommandError(argv, result.returncode, result.stdout, result.stderr)

@@ -7,8 +7,10 @@ from __future__ import annotations
 import hashlib
 import os
 import subprocess
+import tempfile
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
+from typing import Callable
 
 from commands import git as gitw
 from commands import rsync as rsyncw
@@ -37,7 +39,9 @@ def resolve_repo_dir(repo_name: str, project_dir: str) -> str:
     return os.path.join(project_dir, repo_name)
 
 
-def check_dependency(project_dir: str, sync_dir: str, upstream_dir: str, hook: str, *, log) -> None:
+def check_dependency(
+    project_dir: str, sync_dir: str, upstream_dir: str, hook: str, *, log: Callable[..., None]
+) -> None:
     """A profile's `dependencies` key is {<sync-dir>: {<upstream-dir>:
     <rebuild-hook>}} -- before syncing anything, rebuild sync_dir if
     upstream_dir's HEAD has moved since the last rebuild. A per-upstream
@@ -52,13 +56,13 @@ def check_dependency(project_dir: str, sync_dir: str, upstream_dir: str, hook: s
         return
     upstream_head = gitw.rev_parse(upstream_path, "HEAD")
 
-    if os.path.isfile(marker) and Path(marker).read_text().strip() == upstream_head:
+    if os.path.isfile(marker) and Path(marker).read_text(encoding="utf-8").strip() == upstream_head:
         return
 
     log(f"Rebuilding {sync_dir} ({upstream_dir} changed since last rebuild)...")
     subprocess.run(["bash", "-c", hook], cwd=project_dir, check=True)
     Path(sync_path).mkdir(parents=True, exist_ok=True)
-    Path(marker).write_text(upstream_head + "\n")
+    Path(marker).write_text(upstream_head + "\n", encoding="utf-8")
 
 
 def push_repo_and_submodules(repo_dir: str) -> None:
@@ -101,7 +105,7 @@ def _local_identity(repo_dir: str) -> str:
     return digest.hexdigest()
 
 
-def _sync_one_repo(alias: str, remote_root: str, repo_name: str, repo_dir: str, *, log) -> None:
+def _sync_one_repo(alias: str, remote_root: str, repo_name: str, repo_dir: str, *, log: Callable[..., None]) -> None:
     marker_path = f"{remote_root}/{repo_name}/.rrr-synced-commit"
     local_id = _local_identity(repo_dir)
     remote_id = sshw.read_remote_file(alias, marker_path, default="")
@@ -115,8 +119,6 @@ def _sync_one_repo(alias: str, remote_root: str, repo_name: str, repo_dir: str, 
         # directory -- gitignore-filtering the working directory still lets
         # an untracked-but-not-ignored file through; the archive only ever
         # contains what's actually committed.
-        import tempfile
-
         with tempfile.TemporaryDirectory() as archive_dir:
             gitw.archive_repo_tree(repo_dir, local_id, archive_dir)
             rsyncw.sync(archive_dir, alias, f"{remote_root}/{repo_name}", exclude=[".rrr-synced-commit"])
@@ -126,6 +128,7 @@ def _sync_one_repo(alias: str, remote_root: str, repo_name: str, repo_dir: str, 
     sshw.run(alias, f"echo {sshw.quote(local_id)} > {sshw.quote(marker_path)}")
 
 
+# pylint: disable-next=too-many-arguments,too-many-locals,too-many-branches
 def sync_all(
     alias: str,
     remote_root: str,
@@ -137,7 +140,7 @@ def sync_all(
 ) -> None:
     """entries: list of (repo_name, label) pairs, label one of
     default/site-package/push-only. extra_entries are appended unconditionally
-    (e.g. the toolset itself), same as run-remote.sh's --extra."""
+    (e.g. the toolset itself)."""
 
     def log(*args: object) -> None:
         if not quiet:
@@ -150,7 +153,7 @@ def sync_all(
         repos_file = Path(project_dir) / "repos.txt"
         if not repos_file.is_file():
             raise RuntimeError(f"{repos_file} not found")
-        for line in repos_file.read_text().splitlines():
+        for line in repos_file.read_text(encoding="utf-8").splitlines():
             line = line.split("#", 1)[0].replace(" ", "")
             if not line:
                 continue
@@ -197,5 +200,8 @@ def sync_all(
         for future, repo_name in futures:
             try:
                 future.result()
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                # One repo's push failing shouldn't crash the whole sync or
+                # hide the other repos' results -- report and move on, same
+                # as a background job's own failure would just log.
                 print(f"git push ({repo_name}) FAILED: {e}")

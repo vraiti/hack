@@ -19,7 +19,17 @@ from . import _proc
 quote = shlex.quote
 
 
-def run(alias: str, remote_command: str, *, check: bool = True, capture: bool = True, input: str | None = None) -> subprocess.CompletedProcess:
+# input shadows the input() builtin, matching subprocess.run's (and
+# _proc.run's) own parameter name -- naming parity with the function this
+# wraps is more useful here than avoiding a builtin library code never calls.
+def run(
+    alias: str,
+    remote_command: str,
+    *,
+    check: bool = True,
+    capture: bool = True,
+    input: str | None = None,  # pylint: disable=redefined-builtin
+) -> subprocess.CompletedProcess:
     """ssh <alias> <remote_command> -- remote_command is shell text executed
     by the remote's login shell, exactly like `ssh alias 'cmd'` on the
     command line. Build it with quote() for any interpolated values.

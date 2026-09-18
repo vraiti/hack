@@ -7,14 +7,21 @@ dependencies = [
     "pyyaml",
 ]
 
+[dependency-groups]
+dev = [
+    "mypy",
+    "pyright",
+    "pylint",
+    "types-pyyaml",
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
 [tool.mypy]
 python_version = "3.10"
-# run_remote.py imports the sibling ../profile.py (added to sys.path at
-# runtime) as `profile` -- that name collides with CPython's own stdlib
-# `profile` module, so mypy needs this to resolve it to the local file
-# the same way the runtime sys.path.insert() does, instead of the stdlib
-# stub.
-mypy_path = [".."]
 warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unreachable = true
@@ -25,22 +32,11 @@ no_implicit_optional = true
 module = "argcomplete"
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-# ../profile.py is resolved (via mypy_path above) for run_remote.py's import
-# of it, but it's unchanged legacy code outside this package's scope --
-# don't hold it to this package's checks.
-module = "profile"
-ignore_errors = true
-
 [tool.pyright]
 pythonVersion = "3.10"
 typeCheckingMode = "basic"
 reportMissingImports = true
 reportUnnecessaryTypeIgnoreComment = true
-# Same reasoning as [tool.mypy]'s mypy_path: resolves run_remote.py's import
-# of the sibling ../profile.py the way the runtime sys.path.insert() does,
-# instead of CPython's own stdlib `profile` module of the same name.
-extraPaths = [".."]
 
 [tool.pylint.main]
 disable = [
@@ -49,5 +45,9 @@ disable = [
     "missing-function-docstring",
     "invalid-name",          # short/terse names (kv, sha, e, f) are used deliberately throughout
     "too-few-public-methods",
+    "redefined-outer-name",  # pytest fixtures are meant to shadow by name -- this fires on every one used as a test param
 ]
 good-names = ["e", "f", "i", "kv"]
+
+[tool.pylint.format]
+max-line-length = 120  # this codebase favors longer, fully-explained comments over hard-wrapping them

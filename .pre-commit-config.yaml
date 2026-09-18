@@ -1,0 +1,31 @@
+# Only gates py-run-remote/ -- the rest of this repo (bash scripts,
+# aws-manage/, etc.) isn't part of this static-checking effort. Both hooks
+# use language: system (the environment's own installed mypy/pylint,
+# already carrying pydantic/pyyaml/etc.) rather than pre-commit's isolated
+# per-hook envs -- pylint in particular needs the real project dependencies
+# on its import path to analyze the code accurately.
+repos:
+  - repo: local
+    hooks:
+      - id: mypy-py-run-remote
+        name: mypy (py-run-remote)
+        entry: bash -c 'cd py-run-remote && mypy .'
+        language: system
+        files: ^py-run-remote/
+        types: [python]
+        pass_filenames: false
+      - id: pylint-py-run-remote
+        name: pylint (py-run-remote, non-blocking)
+        # Intentionally never fails the commit (see UTILS.md / the
+        # implementation plan): pylint stays advisory so it doesn't become
+        # a hard gate on day-to-day commits to a personal tool, while mypy
+        # above still blocks on real type errors. verbose: true is required
+        # for that -- pre-commit only prints a hook's output on failure by
+        # default, and `|| true` makes this hook always "pass", so without
+        # it pylint's findings would run but never actually be shown.
+        entry: bash -c 'cd py-run-remote && pylint . tests || true'
+        language: system
+        files: ^py-run-remote/
+        types: [python]
+        pass_filenames: false
+        verbose: true

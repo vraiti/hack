@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 # PYTHON_ARGCOMPLETE_OK
-"""Manages run-remote.sh profiles: YAML files under ~/.local/hack/profiles/,
-selectable via `run-remote.sh --profile <name>`."""
+"""Manages run-remote profiles: YAML files under ~/.local/hack/profiles/,
+selectable via `run-remote <profile>`."""
+from __future__ import annotations
+
 import argparse
 import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any, Callable
 
 import argcomplete
 import yaml
@@ -18,12 +21,12 @@ SECRETS_DIR = PROFILE_DIR / "secrets"
 # Each venv=TYPE:CONTENT token (TYPE one of these) appends a {TYPE: CONTENT}
 # entry to the profile's venv *spec* -- a list, in the given order (a list
 # rather than a single dict since the same TYPE, e.g. "package", can appear
-# more than once). run-remote.sh hashes the whole spec (order-sensitive:
+# more than once). run-remote hashes the whole spec (order-sensitive:
 # installs can be order-dependent) and builds a fresh venv from scratch
 # under ~/.venvs/venvs/venv-<hash> the first time that exact spec is seen,
 # symlinked from ~/.venvs/<profile-name> for debugability -- see
-# create-venv-from-spec.sh. There's no "plain name" venv mode: every
-# profile's venv must be spelled out as a spec.
+# venvspec.py. There's no "plain name" venv mode: every profile's venv must
+# be spelled out as a spec.
 VENV_SPEC_TYPES = {"python", "package", "requirements", "script", "package-script", "envvar"}
 
 SINGULAR_KEYS = {"host", "home", "local-home", "initializer"}
@@ -82,7 +85,7 @@ CREATE_USAGE = (
 )
 
 
-def list_profile_names():
+def list_profile_names() -> list[str]:
     if not PROFILE_DIR.is_dir():
         return []
     # A profile name may contain "/" (create/mv make the subdirectories as
@@ -94,11 +97,18 @@ def list_profile_names():
     )
 
 
-def profile_name_completer(prefix, **_kwargs):
+def profile_name_completer(prefix: str, **_kwargs: Any) -> list[str]:
     return [name for name in list_profile_names() if name.startswith(prefix)]
 
 
-def split_command(argv):
+def _set_completer(action: argparse.Action, completer: Callable[..., list[str]]) -> None:
+    # argcomplete's documented usage pattern is exactly this attribute
+    # assignment -- it monkey-patches argparse.Action at runtime, so
+    # argparse's own stubs have no way to know about it statically.
+    action.completer = completer  # type: ignore[attr-defined]
+
+
+def split_command(argv: list[str]) -> tuple[list[str], list[str]]:
     # argparse's own "--" handling (a pre-REMAINDER special case, unrelated
     # to REMAINDER's usual "everything from here on is literal" behavior)
     # silently swallows a single leading "--" before REMAINDER ever sees it
@@ -111,7 +121,7 @@ def split_command(argv):
     return argv, []
 
 
-def parse_args(argv):
+def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="profile.py")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
@@ -133,32 +143,32 @@ def parse_args(argv):
         usage=CREATE_USAGE,
         help="Create a profile, or update an existing one's changed keys",
     )
-    mod.add_argument("profile_name").completer = profile_name_completer
+    _set_completer(mod.add_argument("profile_name"), profile_name_completer)
     mod.add_argument("rest", nargs=argparse.REMAINDER, metavar="[key=value ...]")
 
     subparsers.add_parser("ls", help="List profile names")
 
     show = subparsers.add_parser("get", help="Print a profile's resolved YAML")
-    show.add_argument("profile_name").completer = profile_name_completer
+    _set_completer(show.add_argument("profile_name"), profile_name_completer)
 
     delete = subparsers.add_parser("rm", help="Delete a profile")
-    delete.add_argument("profile_name").completer = profile_name_completer
+    _set_completer(delete.add_argument("profile_name"), profile_name_completer)
 
     move = subparsers.add_parser(
         "mv",
         help="Rename/move a profile (and its secrets, if any); either name may contain "
              "'/' to nest it in a subdirectory",
     )
-    move.add_argument("old_name").completer = profile_name_completer
+    _set_completer(move.add_argument("old_name"), profile_name_completer)
     move.add_argument("new_name")
 
     argcomplete.autocomplete(parser)
     return parser.parse_args(argv)
 
 
-def parse_kv_tokens(tokens):
-    singular = {}
-    repeatable = {key: [] for key in REPEATABLE_KEYS}
+def parse_kv_tokens(tokens: list[str]) -> tuple[dict[str, str], dict[str, list[str]]]:
+    singular: dict[str, str] = {}
+    repeatable: dict[str, list[str]] = {key: [] for key in REPEATABLE_KEYS}
     for token in tokens:
         key, sep, value = token.partition("=")
         if not sep:
@@ -179,14 +189,14 @@ def parse_kv_tokens(tokens):
     return singular, repeatable
 
 
-def build_venv(venv_args):
+def build_venv(venv_args: list[str]) -> list[dict[str, str]] | None:
     if not venv_args:
         return None
 
     # A list of single-key {TYPE: CONTENT} entries, in the given order --
     # not a single dict, since the same TYPE can legitimately appear more
     # than once (e.g. several "package" entries), which a dict can't hold.
-    spec = []
+    spec: list[dict[str, str]] = []
     for token in venv_args:
         type_, sep, content = token.partition(":")
         if not sep or type_ not in VENV_SPEC_TYPES:
@@ -197,16 +207,16 @@ def build_venv(venv_args):
     return spec
 
 
-def build_env(env_args):
-    env = {}
+def build_env(env_args: list[str]) -> dict[str, str]:
+    env: dict[str, str] = {}
     for kv in env_args:
         k, _, v = kv.partition("=")
         env[k] = v
     return env
 
 
-def build_sync(sync_args):
-    sync = {}
+def build_sync(sync_args: list[str]) -> dict[str, str]:
+    sync: dict[str, str] = {}
     for kv in sync_args:
         path, sep, label = kv.partition(":")
         if not sep:
@@ -219,8 +229,8 @@ def build_sync(sync_args):
     return sync
 
 
-def build_dependencies(dependency_args):
-    dependencies = {}
+def build_dependencies(dependency_args: list[str]) -> dict[str, dict[str, str]]:
+    dependencies: dict[str, dict[str, str]] = {}
     for spec in dependency_args:
         sync_dir, sep1, rest = spec.partition(":")
         upstream_dir, sep2, hook = rest.partition(":")
@@ -231,15 +241,15 @@ def build_dependencies(dependency_args):
     return dependencies
 
 
-def profile_path(name):
+def profile_path(name: str) -> Path:
     return PROFILE_DIR / f"{name}.yaml"
 
 
-def secrets_path(name):
+def secrets_path(name: str) -> Path:
     return SECRETS_DIR / f"{name}.txt"
 
 
-def write_secrets(name, secret_args):
+def write_secrets(name: str, secret_args: list[str]) -> Path:
     path = secrets_path(name)
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = []
@@ -249,26 +259,26 @@ def write_secrets(name, secret_args):
             print(f"ERROR: expected secret=KEY=VALUE, got 'secret={kv}'", file=sys.stderr)
             sys.exit(1)
         lines.append(f"{k}={v}")
-    path.write_text("".join(f"{line}\n" for line in lines))
+    path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
     return path
 
 
-def load_profile(name):
+def load_profile(name: str) -> dict[str, Any]:
     path = profile_path(name)
     if not path.is_file():
         print(f"ERROR: profile '{name}' not found at {path}", file=sys.stderr)
         sys.exit(1)
-    return yaml.safe_load(path.read_text()) or {}
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
-def load_profile_if_exists(name):
+def load_profile_if_exists(name: str) -> dict[str, Any]:
     path = profile_path(name)
     if not path.is_file():
         return {}
-    return yaml.safe_load(path.read_text()) or {}
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
-def build_own(kv_tokens, command):
+def build_own(kv_tokens: list[str], command: list[str]) -> tuple[dict[str, Any], list[str], list[str]]:
     singular, repeatable = parse_kv_tokens(kv_tokens)
 
     # venv/env/sync are only written when explicitly given -- an omitted key
@@ -276,7 +286,7 @@ def build_own(kv_tokens, command):
     # instead of being clobbered by an implicit default. `secret` never goes
     # into `own` at all -- it's written to its own gitignored file by the
     # caller, never merged into the profile dict.
-    own = {}
+    own: dict[str, Any] = {}
     venv = build_venv(repeatable["venv"])
     if venv is not None:
         own["venv"] = venv
@@ -304,14 +314,14 @@ def build_own(kv_tokens, command):
     return own, repeatable["include"], repeatable["secret"]
 
 
-def write_profile(name, merged):
+def write_profile(name: str, merged: dict[str, Any]) -> Path:
     path = profile_path(name)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.dump(merged, sort_keys=False, default_flow_style=False, allow_unicode=True))
+    path.write_text(yaml.dump(merged, sort_keys=False, default_flow_style=False, allow_unicode=True), encoding="utf-8")
     return path
 
 
-def cmd_create(args):
+def cmd_create(args: argparse.Namespace) -> None:
     path = profile_path(args.profile_name)
     if path.is_file():
         print(f"ERROR: profile '{args.profile_name}' already exists at {path} "
@@ -324,7 +334,7 @@ def cmd_create(args):
     # (simple top-level dict update, latest-wins per key, e.g. `env` is
     # replaced wholesale rather than deep-merged) first, and this profile's
     # own explicit keys merge in last so they win over anything included.
-    merged = {}
+    merged: dict[str, Any] = {}
     for inc in includes:
         merged.update(load_profile(inc))
     merged.update(own)
@@ -337,14 +347,14 @@ def cmd_create(args):
         print(f"Wrote {len(secrets)} secret(s) to {secrets_file}")
 
 
-def cmd_mod(args):
+def cmd_mod(args: argparse.Namespace) -> None:
     # No key=value/include/command args at all -- open the profile's raw
     # YAML in an editor instead of doing a no-op merge.
     if not args.rest and not args.command:
         path = profile_path(args.profile_name)
         path.parent.mkdir(parents=True, exist_ok=True)
         if not path.is_file():
-            path.write_text("{}\n")
+            path.write_text("{}\n", encoding="utf-8")
         editor = os.environ.get("EDITOR", "vim")
         subprocess.call([editor, str(path)])
         return
@@ -372,17 +382,17 @@ def cmd_mod(args):
         print(f"Wrote {len(secrets)} secret(s) to {secrets_file}")
 
 
-def cmd_ls(_args):
+def cmd_ls(_args: argparse.Namespace) -> None:
     for name in list_profile_names():
         print(name)
 
 
-def cmd_get(args):
+def cmd_get(args: argparse.Namespace) -> None:
     profile = load_profile(args.profile_name)
     print(yaml.dump(profile, sort_keys=False, default_flow_style=False, allow_unicode=True), end="")
 
 
-def cmd_rm(args):
+def cmd_rm(args: argparse.Namespace) -> None:
     path = profile_path(args.profile_name)
     if not path.is_file():
         print(f"ERROR: profile '{args.profile_name}' not found at {path}", file=sys.stderr)
@@ -391,7 +401,7 @@ def cmd_rm(args):
     print(f"Deleted profile '{args.profile_name}' at {path}")
 
 
-def cmd_mv(args):
+def cmd_mv(args: argparse.Namespace) -> None:
     old_path = profile_path(args.old_name)
     if not old_path.is_file():
         print(f"ERROR: profile '{args.old_name}' not found at {old_path}", file=sys.stderr)
@@ -413,18 +423,19 @@ def cmd_mv(args):
         print(f"Moved secrets to {new_secrets}")
 
 
-def main():
+def main() -> None:
     argv, command = split_command(sys.argv[1:])
     args = parse_args(argv)
     args.command = command
-    {
+    handlers: dict[str, Callable[[argparse.Namespace], None]] = {
         "create": cmd_create,
         "mod": cmd_mod,
         "ls": cmd_ls,
         "get": cmd_get,
         "rm": cmd_rm,
         "mv": cmd_mv,
-    }[args.subcommand](args)
+    }
+    handlers[args.subcommand](args)
 
 
 if __name__ == "__main__":

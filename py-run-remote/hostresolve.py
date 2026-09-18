@@ -41,7 +41,7 @@ def _ssh_config_file() -> Path:
 def resolve_default_host(config_file: Path | None = None) -> str:
     config_file = config_file or _ssh_config_file()
     try:
-        text = config_file.read_text()
+        text = config_file.read_text(encoding="utf-8")
     except FileNotFoundError:
         text = ""
 

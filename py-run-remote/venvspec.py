@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -42,8 +43,6 @@ def build_venv_from_spec(spec: list[VenvSpecEntry], venv_dir: str, project_root:
     print(f"Creating venv at {venv_dir} (python {python_version})...")
     venv_path = Path(venv_dir)
     if venv_path.exists():
-        import shutil
-
         shutil.rmtree(venv_path)
     venv_path.parent.mkdir(parents=True, exist_ok=True)
     env = _cuda_env()
@@ -55,7 +54,7 @@ def build_venv_from_spec(spec: list[VenvSpecEntry], venv_dir: str, project_root:
     # even though worker.py itself builds the job's env directly rather than
     # sourcing this.
     activate_path = venv_path / "bin" / "activate"
-    with activate_path.open("a") as f:
+    with activate_path.open("a", encoding="utf-8") as f:
         for entry in spec:
             if entry.type != "envvar":
                 continue
@@ -67,7 +66,7 @@ def build_venv_from_spec(spec: list[VenvSpecEntry], venv_dir: str, project_root:
     for entry in spec:
         if entry.type in ("python", "envvar"):
             continue  # already applied above, before the venv was even created
-        elif entry.type == "package":
+        if entry.type == "package":
             # CONTENT can be an argv-style string with flags (e.g. "-e
             # vllm-omni --no-build-isolation"); shlex.split (not a bare
             # str.split) matches shell word-splitting, including quoted
@@ -105,19 +104,24 @@ def _run_package_script(content: str, venv_dir: str, project_root: str, env: dic
     read_fd, write_fd = os.pipe()
     returncode = None
     try:
-        proc = subprocess.Popen(
+        # preexec_fn runs arbitrary code between fork() and exec() in the
+        # child, which is unsafe if the *parent* is multithreaded (only the
+        # forking thread survives the fork, so another thread's held lock
+        # can deadlock the child). worker.py -- the only caller of this
+        # function -- is single-threaded, so that risk doesn't apply here.
+        with subprocess.Popen(  # pylint: disable=subprocess-popen-preexec-fn
             ["bash", "-c", content],
             cwd=project_root,
             env=env,
             pass_fds=(3,),
             preexec_fn=lambda: os.dup2(write_fd, 3),
-        )
-        os.close(write_fd)
-        write_fd = -1
-        with os.fdopen(read_fd, "r") as pkg_output:
-            read_fd = -1
-            pkg_args = [line.strip() for line in pkg_output if line.strip()]
-        returncode = proc.wait()
+        ) as proc:
+            os.close(write_fd)
+            write_fd = -1
+            with os.fdopen(read_fd, "r") as pkg_output:
+                read_fd = -1
+                pkg_args = [line.strip() for line in pkg_output if line.strip()]
+            returncode = proc.wait()
     finally:
         if write_fd != -1:
             os.close(write_fd)

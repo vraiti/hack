@@ -9,18 +9,12 @@ from __future__ import annotations
 import os
 import sys
 import time
-from pathlib import Path
 
-HACK_DIR = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(HACK_DIR))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import profile as profile_cli  # noqa: E402  (needs HACK_DIR on sys.path first)
-
-import hostresolve  # noqa: E402
-import sync  # noqa: E402
-from commands import ssh as sshw  # noqa: E402
-from models import JobSpec, Profile  # noqa: E402
+import hostresolve
+import recipes
+import sync
+from commands import ssh as sshw
+from models import JobSpec, Profile
 
 
 def parse_args(argv: list[str]) -> tuple[bool, str, list[str]]:
@@ -47,11 +41,11 @@ def parse_args(argv: list[str]) -> tuple[bool, str, list[str]]:
 
 
 def load_profile_secrets(profile_name: str) -> dict[str, str]:
-    secrets_path = profile_cli.secrets_path(profile_name)
+    secrets_path = recipes.secrets_path(profile_name)
     if not secrets_path.is_file():
         return {}
     secrets: dict[str, str] = {}
-    for line in secrets_path.read_text().splitlines():
+    for line in secrets_path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         key, _, value = line.partition("=")
@@ -88,10 +82,10 @@ def watch_job(alias: str, remote_toolset_dir: str, log_file: str, exit_file: str
     return int((exit_code_str or "1").strip() or "1")
 
 
-def main() -> int:
+def main() -> int:  # pylint: disable=too-many-locals
     quiet, profile_name, append_args = parse_args(sys.argv[1:])
 
-    raw_profile = profile_cli.load_profile(profile_name)
+    raw_profile = recipes.load_profile(profile_name)
     profile = Profile.model_validate(raw_profile)
 
     if not profile.command:
@@ -103,7 +97,7 @@ def main() -> int:
 
     if not quiet:
         print(f"Using profile '{profile_name}':")
-        print(profile_cli.yaml.dump(raw_profile, sort_keys=False, default_flow_style=False, allow_unicode=True), end="")
+        print(recipes.yaml.dump(raw_profile, sort_keys=False, default_flow_style=False, allow_unicode=True), end="")
         if secrets:
             print("Using secrets:")
             for key in secrets:
@@ -149,7 +143,8 @@ def main() -> int:
 
     job_json_path = f"{remote_toolset_dir}/job.json"
     sshw.run(alias, f"cat > {sshw.quote(job_json_path)}", input=job.model_dump_json())
-    sshw.run(alias, f"python3 {sshw.quote(remote_toolset_dir + '/worker.py')} {sshw.quote(job_json_path)}", capture=False)
+    worker_path = sshw.quote(remote_toolset_dir + "/worker.py")
+    sshw.run(alias, f"python3 {worker_path} {sshw.quote(job_json_path)}", capture=False)
 
     return watch_job(alias, remote_toolset_dir, log_file, exit_file, quiet=quiet)
 
