@@ -87,7 +87,8 @@ fi
 PROFILE_JSON="$(python3 -c 'import json, sys, yaml; json.dump(yaml.safe_load(sys.stdin) or {}, sys.stdout)' < "$PROFILE_PATH")"
 
 # A profile's `venv` is a list of single-key entries, {TYPE: CONTENT} with
-# TYPE one of "python"/"package"/"requirements"/"script"/"package-script",
+# TYPE one of "python"/"package"/"requirements"/"script"/"package-script"/
+# "envvar",
 # in the order they should be applied -- see create-venv-from-spec.sh. There's no more
 # "plain name pointing at an existing/default venv directory" mode: every
 # profile must spell out how to build its venv. The real venv is
@@ -100,7 +101,7 @@ PROFILE_JSON="$(python3 -c 'import json, sys, yaml; json.dump(yaml.safe_load(sys
 VENV_TYPE="$(jq -r '.venv | type' <<< "$PROFILE_JSON")"
 if [[ "$VENV_TYPE" != "array" ]]; then
     echo "ERROR: profile '$PROFILE_NAME' has no venv spec -- \"venv\" must be a list of" \
-         "{python|package|requirements|script|package-script: ...} entries (see profile.py's venv=TYPE:CONTENT)" >&2
+         "{python|package|requirements|script|package-script|envvar: ...} entries (see profile.py's venv=TYPE:CONTENT)" >&2
     exit 1
 fi
 VENV_SPEC_JSON="$(jq -c '.venv' <<< "$PROFILE_JSON")"

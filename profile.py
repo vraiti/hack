@@ -24,7 +24,7 @@ SECRETS_DIR = PROFILE_DIR / "secrets"
 # symlinked from ~/.venvs/<profile-name> for debugability -- see
 # create-venv-from-spec.sh. There's no "plain name" venv mode: every
 # profile's venv must be spelled out as a spec.
-VENV_SPEC_TYPES = {"python", "package", "requirements", "script", "package-script"}
+VENV_SPEC_TYPES = {"python", "package", "requirements", "script", "package-script", "envvar"}
 
 SINGULAR_KEYS = {"host", "home", "local-home", "initializer"}
 REPEATABLE_KEYS = {"venv", "env", "secret", "sync", "include", "dependency", "command"}
@@ -38,6 +38,14 @@ CREATE_USAGE = (
     "                         spec, cached at ~/.venvs/venvs on the remote (shared across\n"
     "                         any profile with the identical spec) and symlinked from\n"
     "                         ~/.venvs/<profile-name> for debugability. TYPE is one of:\n"
+    "                           envvar:KEY=VALUE        `export KEY=VALUE` appended to bin/activate\n"
+    "                                                   -- both a build-time var (in effect for\n"
+    "                                                   every entry below it) and a permanent one\n"
+    "                                                   (every future activation picks it up too).\n"
+    "                                                   Must come before \"python\" (and everything\n"
+    "                                                   else) -- activate is sourced right after\n"
+    "                                                   the venv is created, so an envvar entry any\n"
+    "                                                   later wouldn't apply to this build\n"
     "                           python:VERSION          CPython version to create the venv with\n"
     "                           package:NAME            `uv pip install NAME`\n"
     "                           requirements:PATH       `uv pip install -r PATH`\n"
@@ -48,7 +56,8 @@ CREATE_USAGE = (
     "                                                   line -- for packages CMD has to compute\n"
     "                                                   (e.g. a CUDA-version-specific wheel URL)\n"
     "                                                   rather than a fixed name/version\n"
-    "                         e.g. venv=python:3.11 venv=requirements:requirements.txt\n"
+    "                         e.g. venv=envvar:MAX_JOBS=4 venv=python:3.11\n"
+    "                         venv=requirements:requirements.txt\n"
     "                         venv=\"script:pip install -e .[dev]\"\n"
     "                         venv=\"package-script:echo torch==2.8.0 >&3\"\n"
     "  env=VAR=value          Extra remote env var (repeatable, or comma-separated: env=A=1,B=2)\n"

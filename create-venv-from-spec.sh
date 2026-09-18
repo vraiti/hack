@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Builds a venv from a profile's `venv` list spec (see run-remote.sh): a
 # JSON array of single-key {TYPE: CONTENT} entries, TYPE one of
-# "python"/"package"/"requirements"/"script"/"package-script", in
+# "python"/"package"/"requirements"/"script"/"package-script"/"envvar", in
 # application order (a list, not an object, so the same TYPE can appear
 # more than once -- e.g. several "package" entries -- without colliding on
 # key uniqueness). Invoked with the venv's already hash-addressed
@@ -20,6 +20,24 @@ if [[ "$malformed" -gt 0 ]]; then
     echo "ERROR: venv spec entries must each be a single-key {TYPE: CONTENT} object" >&2
     exit 1
 fi
+
+# "envvar" entries get appended to bin/activate below, then that activate
+# is sourced for the very first time before any package/script step runs --
+# so an "envvar" occurring after "python" (or after any real install step)
+# would either be too late to affect this build at all, or be silently
+# misleading about when it actually takes effect. Enforce that they're a
+# prefix of the list instead of a subtler position-specific check.
+seen_other=0
+while IFS= read -r entry_type; do
+    if [[ "$entry_type" == "envvar" ]]; then
+        if [[ "$seen_other" -eq 1 ]]; then
+            echo "ERROR: \"envvar\" entries must all appear before any other entry (including \"python\")" >&2
+            exit 1
+        fi
+    else
+        seen_other=1
+    fi
+done < <(jq -r '.[] | keys[0]' "$SPEC_FILE")
 
 # cuda-toolkit's rpm doesn't add itself to PATH, and this script is normally
 # invoked via `ssh host "bash create-venv-from-spec.sh"`, which runs as a
@@ -45,6 +63,20 @@ fi
 mkdir -p "$(dirname "$VENV_DIR")"
 # Default to Python 3.14 unless the spec pins one, matching create-venv.sh.
 uv venv "$VENV_DIR" --python "${PYTHON_VERSION:-3.14}"
+
+# Append each "envvar" entry's export to bin/activate *before* sourcing it
+# for the first time, so the vars are both persistent (every future
+# activation, e.g. run-remote.sh's, picks them up from the file) and
+# available during this very build (every package/script/requirements/
+# package-script step below runs after this source, in the same process).
+while IFS= read -r kv; do
+    if [[ "$kv" != *=* ]]; then
+        echo "ERROR: envvar entry must be KEY=VALUE, got '$kv'" >&2
+        exit 1
+    fi
+    printf 'export %s=%q\n' "${kv%%=*}" "${kv#*=}" >> "$VENV_DIR/bin/activate"
+done < <(jq -r '.[] | select(has("envvar")) | .envvar' "$SPEC_FILE")
+
 source "$VENV_DIR/bin/activate"
 
 cd "$PROJECT_ROOT"
@@ -62,7 +94,9 @@ while IFS= read -r entry; do
     type="$(jq -r '.[0]' <<< "$entry")"
     content="$(jq -r '.[1]' <<< "$entry")"
     case "$type" in
-        python)
+        python | envvar)
+            # Both already fully applied above, before the venv was even
+            # created/first activated.
             ;;
         package)
             # Not just `uv pip install "$content"` -- CONTENT can be an
