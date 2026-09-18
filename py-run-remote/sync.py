@@ -133,33 +133,29 @@ def sync_all(
     alias: str,
     remote_root: str,
     project_dir: str,
-    profile: Profile | None,
+    profile: Profile,
     *,
     extra_entries: list[tuple[str, str]] | None = None,
     quiet: bool = False,
 ) -> None:
     """entries: list of (repo_name, label) pairs, label one of
-    default/site-package/push-only. extra_entries are appended unconditionally
-    (e.g. the toolset itself)."""
+    default/site-package/push-only, from profile.sync. extra_entries are
+    appended unconditionally (e.g. the toolset itself)."""
 
     def log(*args: object) -> None:
         if not quiet:
             print(*args)
 
-    entries: list[tuple[str, str]] = []
-    if profile is not None and profile.sync:
-        entries = list(profile.sync.items())
-    else:
-        repos_file = Path(project_dir) / "repos.txt"
-        if not repos_file.is_file():
-            raise RuntimeError(f"{repos_file} not found")
-        for line in repos_file.read_text(encoding="utf-8").splitlines():
-            line = line.split("#", 1)[0].replace(" ", "")
-            if not line:
-                continue
-            name, _, label = line.partition(":")
-            entries.append((name, label or "default"))
+    entries: list[tuple[str, str]] = list(profile.sync.items())
     entries += extra_entries or []
+
+    # Fail fast, before touching anything (auto-commit, push, rsync) --
+    # a missing local directory means the profile/repos.txt is stale or
+    # misconfigured, not something to silently work around by skipping it.
+    for repo_name, _label in entries:
+        repo_dir = resolve_repo_dir(repo_name, project_dir)
+        if not os.path.isdir(repo_dir):
+            raise RuntimeError(f"{repo_dir} does not exist")
 
     # Auto-commit any uncommitted changes upfront, synchronously, for every
     # entry (including push-only ones) before any background push or
@@ -171,18 +167,14 @@ def sync_all(
         if os.path.exists(os.path.join(repo_dir, ".git")):
             gitw.auto_commit_tree(repo_dir)
 
-    if profile is not None:
-        for sync_dir, upstream_map in profile.dependencies.items():
-            for upstream_dir, hook in upstream_map.items():
-                check_dependency(project_dir, sync_dir, upstream_dir, hook, log=log)
+    for sync_dir, upstream_map in profile.dependencies.items():
+        for upstream_dir, hook in upstream_map.items():
+            check_dependency(project_dir, sync_dir, upstream_dir, hook, log=log)
 
     futures: list[tuple[Future, str]] = []
     with ThreadPoolExecutor() as executor:
         for repo_name, label in entries:
             repo_dir = resolve_repo_dir(repo_name, project_dir)
-            if not os.path.isdir(repo_dir):
-                print(f"WARNING: {repo_dir} does not exist, skipping")
-                continue
 
             has_head = os.path.exists(os.path.join(repo_dir, ".git")) and gitw.symbolic_ref_exists(repo_dir)
             if label == "push-only":

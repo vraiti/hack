@@ -11,7 +11,9 @@ sync:
   vllm-omni-aux: default
 command:
 - vllm-omni-aux/utils/pytest.sh
-- -v 
-- tests/entrypoints/openai_api/test_qwen3_omni_realtime_websocket.py 
-- -k 
+- -v
+- --run-level
+- advanced_model
+- tests/entrypoints/openai_api/test_qwen3_omni_realtime_websocket.py
+- -k
 - livekit_client_vad_replay

@@ -72,6 +72,15 @@ def test_sync_all_skips_unchanged_repo(
     assert not rsync_calls
 
 
+def test_sync_all_raises_on_missing_local_directory(tmp_path: Path) -> None:
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    profile = Profile(sync={"does-not-exist": "default"})
+
+    with pytest.raises(RuntimeError, match="does not exist"):
+        sync.sync_all("fake-alias", "/remote/root", str(project_dir), profile, quiet=True)
+
+
 def test_push_repo_and_submodules_raises_without_remote(
     make_git_repo: Callable[..., Path], commit_all: Callable[[Path, str], str]
 ) -> None:
