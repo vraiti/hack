@@ -206,10 +206,16 @@ ssh "$SSH_ALIAS" "mkdir -p $(printf '%q' "$(dirname "$REMOTE_VENV_DIR")") && ln 
 # own venv is never the thing getting swept. Base64-encoded like the
 # launcher/watch commands below -- this is a multi-line script, not a
 # single flat command, and needs to survive ssh's flatten-and-reparse.
+#
+# The symlink scan must recurse (a profile name can contain "/", e.g.
+# "team/svc" -> ~/.venvs/team/svc -- a plain -maxdepth 1 would miss it and
+# GC its still-referenced venv out from under it), but must NOT descend into
+# ~/.venvs/venvs itself -- a real venv is full of its own internal symlinks
+# (e.g. bin/python -> python3), which aren't profile references at all.
 GC_SCRIPT='
 venvs_dir="$HOME/.venvs/venvs"
 [ -d "$venvs_dir" ] || exit 0
-referenced=$(find "$HOME/.venvs" -maxdepth 1 -type l -exec readlink -f {} \; | sort -u)
+referenced=$(find "$HOME/.venvs" -type l -not -path "$venvs_dir/*" -exec readlink -f {} \; | sort -u)
 for d in "$venvs_dir"/*/; do
     d="${d%/}"
     [ -d "$d" ] || continue
