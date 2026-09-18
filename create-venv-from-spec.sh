@@ -3,12 +3,13 @@ set -euo pipefail
 
 # Builds a venv from a profile's `venv` list spec (see run-remote.sh): a
 # JSON array of single-key {TYPE: CONTENT} entries, TYPE one of
-# "python"/"package"/"requirements"/"script", in application order (a list,
-# not an object, so the same TYPE can appear more than once -- e.g. several
-# "package" entries -- without colliding on key uniqueness). Invoked with
-# the venv's already hash-addressed destination dir, the spec JSON (as a
-# file, so odd characters in script content never have to survive a shell
-# arg), and the synced project root (cwd for "requirements"/"script"
+# "python"/"package"/"requirements"/"script"/"package-script", in
+# application order (a list, not an object, so the same TYPE can appear
+# more than once -- e.g. several "package" entries -- without colliding on
+# key uniqueness). Invoked with the venv's already hash-addressed
+# destination dir, the spec JSON (as a file, so odd characters in
+# script/package-script content never have to survive a shell arg), and
+# the synced project root (cwd for "requirements"/"script"/"package-script"
 # entries, so relative paths and project-relative commands resolve).
 VENV_DIR="${1:?Usage: $0 <venv-dir> <spec-json-file> <project-root>}"
 SPEC_FILE="${2:?Usage: $0 <venv-dir> <spec-json-file> <project-root>}"
@@ -54,9 +55,9 @@ cd "$PROJECT_ROOT"
 # venv is hashed on the spec's exact JSON rather than an order-independent
 # digest.
 # Each line is a compact ["type","content"] JSON array (not tab/newline
-# delimited plain text) so a "script" entry can safely contain newlines,
-# tabs, or anything else -- jq -c escapes those inside its one-line-per-
-# entry array instead of letting them break the loop.
+# delimited plain text) so a "script"/"package-script" entry can safely
+# contain newlines, tabs, or anything else -- jq -c escapes those inside
+# its one-line-per-entry array instead of letting them break the loop.
 while IFS= read -r entry; do
     type="$(jq -r '.[0]' <<< "$entry")"
     content="$(jq -r '.[1]' <<< "$entry")"
@@ -64,8 +65,17 @@ while IFS= read -r entry; do
         python)
             ;;
         package)
+            # Not just `uv pip install "$content"` -- CONTENT can be an
+            # argv-style string with flags (e.g. "-e vllm-omni
+            # --no-build-isolation"), which needs to reach `uv pip install`
+            # as separate arguments, not one literal string it'd fail to
+            # parse as a package spec. `read -ra` splits on whitespace only
+            # (no globbing, unlike a bare unquoted expansion), which is
+            # enough for typical flag/package tokens but -- same as a shell
+            # command line -- won't honor quotes embedded in CONTENT itself.
             echo "Installing package: $content"
-            uv pip install "$content"
+            read -ra pkg_args <<< "$content"
+            uv pip install "${pkg_args[@]}"
             ;;
         requirements)
             echo "Installing requirements from $content"
@@ -74,6 +84,25 @@ while IFS= read -r entry; do
         script)
             echo "Running setup script: $content"
             bash -c "$content"
+            ;;
+        package-script)
+            # $content computes the package args itself (e.g. picking a
+            # wheel URL based on the installed CUDA/torch version) rather
+            # than having them hardcoded in the profile. It writes them to
+            # fd 3, one per line -- not stdout -- since stdout/stderr stay
+            # free for normal progress output. Swap fd 1 and fd 3 around the
+            # command substitution: content's fd 3 becomes what mapfile
+            # reads, and its fd 1 is redirected to our fd 2 so any of its
+            # own echoed progress is still visible instead of silently
+            # captured.
+            echo "Running package script: $content"
+            mapfile -t pkg_args < <(bash -c "$content" 3>&1 1>&2)
+            if [[ "${#pkg_args[@]}" -eq 0 ]]; then
+                echo "ERROR: package-script wrote no packages to fd 3" >&2
+                exit 1
+            fi
+            echo "Installing packages from script: ${pkg_args[*]}"
+            uv pip install "${pkg_args[@]}"
             ;;
         *)
             echo "ERROR: unknown venv spec type '$type'" >&2

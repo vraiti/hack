@@ -24,7 +24,7 @@ SECRETS_DIR = PROFILE_DIR / "secrets"
 # symlinked from ~/.venvs/<profile-name> for debugability -- see
 # create-venv-from-spec.sh. There's no "plain name" venv mode: every
 # profile's venv must be spelled out as a spec.
-VENV_SPEC_TYPES = {"python", "package", "requirements", "script"}
+VENV_SPEC_TYPES = {"python", "package", "requirements", "script", "package-script"}
 
 SINGULAR_KEYS = {"host", "home", "local-home", "initializer"}
 REPEATABLE_KEYS = {"venv", "env", "secret", "sync", "include", "dependency", "command"}
@@ -38,12 +38,19 @@ CREATE_USAGE = (
     "                         spec, cached at ~/.venvs/venvs on the remote (shared across\n"
     "                         any profile with the identical spec) and symlinked from\n"
     "                         ~/.venvs/<profile-name> for debugability. TYPE is one of:\n"
-    "                           python:VERSION        CPython version to create the venv with\n"
-    "                           package:NAME           `uv pip install NAME`\n"
-    "                           requirements:PATH      `uv pip install -r PATH`\n"
-    "                           script:CMD             bash -c CMD, run inside the venv\n"
+    "                           python:VERSION          CPython version to create the venv with\n"
+    "                           package:NAME            `uv pip install NAME`\n"
+    "                           requirements:PATH       `uv pip install -r PATH`\n"
+    "                           script:CMD              bash -c CMD, run inside the venv\n"
+    "                           package-script:CMD      bash -c CMD, run inside the venv, with\n"
+    "                                                   CMD's fd 3 (not stdout) captured as the\n"
+    "                                                   package args to `uv pip install`, one per\n"
+    "                                                   line -- for packages CMD has to compute\n"
+    "                                                   (e.g. a CUDA-version-specific wheel URL)\n"
+    "                                                   rather than a fixed name/version\n"
     "                         e.g. venv=python:3.11 venv=requirements:requirements.txt\n"
     "                         venv=\"script:pip install -e .[dev]\"\n"
+    "                         venv=\"package-script:echo torch==2.8.0 >&3\"\n"
     "  env=VAR=value          Extra remote env var (repeatable, or comma-separated: env=A=1,B=2)\n"
     "  secret=VAR=value       Extra remote env var kept out of the (git-tracked) profile YAML --\n"
     "                         written to profiles/secrets/<name>.txt (gitignored) instead, and\n"
@@ -69,7 +76,13 @@ CREATE_USAGE = (
 def list_profile_names():
     if not PROFILE_DIR.is_dir():
         return []
-    return sorted(p.stem for p in PROFILE_DIR.glob("*.yaml"))
+    # A profile name may contain "/" (create/mv make the subdirectories as
+    # needed), so this has to recurse and keep the subdirectory prefix,
+    # not just the bare filename stem.
+    return sorted(
+        str(p.relative_to(PROFILE_DIR).with_suffix(""))
+        for p in PROFILE_DIR.rglob("*.yaml")
+    )
 
 
 def profile_name_completer(prefix, **_kwargs):
@@ -94,7 +107,7 @@ def parse_args(argv):
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
     create = subparsers.add_parser(
-        "mk",
+        "create",
         usage=CREATE_USAGE,
         help="Create a new profile (refuses if one already exists)",
     )
@@ -121,6 +134,14 @@ def parse_args(argv):
 
     delete = subparsers.add_parser("rm", help="Delete a profile")
     delete.add_argument("profile_name").completer = profile_name_completer
+
+    move = subparsers.add_parser(
+        "mv",
+        help="Rename/move a profile (and its secrets, if any); either name may contain "
+             "'/' to nest it in a subdirectory",
+    )
+    move.add_argument("old_name").completer = profile_name_completer
+    move.add_argument("new_name")
 
     argcomplete.autocomplete(parser)
     return parser.parse_args(argv)
@@ -210,8 +231,8 @@ def secrets_path(name):
 
 
 def write_secrets(name, secret_args):
-    SECRETS_DIR.mkdir(parents=True, exist_ok=True)
     path = secrets_path(name)
+    path.parent.mkdir(parents=True, exist_ok=True)
     lines = []
     for kv in secret_args:
         k, sep, v = kv.partition("=")
@@ -275,13 +296,13 @@ def build_own(kv_tokens, command):
 
 
 def write_profile(name, merged):
-    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     path = profile_path(name)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.dump(merged, sort_keys=False, default_flow_style=False, allow_unicode=True))
     return path
 
 
-def cmd_mk(args):
+def cmd_create(args):
     path = profile_path(args.profile_name)
     if path.is_file():
         print(f"ERROR: profile '{args.profile_name}' already exists at {path} "
@@ -312,7 +333,7 @@ def cmd_mod(args):
     # YAML in an editor instead of doing a no-op merge.
     if not args.rest and not args.command:
         path = profile_path(args.profile_name)
-        PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
         if not path.is_file():
             path.write_text("{}\n")
         editor = os.environ.get("EDITOR", "vim")
@@ -361,16 +382,39 @@ def cmd_rm(args):
     print(f"Deleted profile '{args.profile_name}' at {path}")
 
 
+def cmd_mv(args):
+    old_path = profile_path(args.old_name)
+    if not old_path.is_file():
+        print(f"ERROR: profile '{args.old_name}' not found at {old_path}", file=sys.stderr)
+        sys.exit(1)
+    new_path = profile_path(args.new_name)
+    if new_path.is_file():
+        print(f"ERROR: profile '{args.new_name}' already exists at {new_path}", file=sys.stderr)
+        sys.exit(1)
+
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    old_path.rename(new_path)
+    print(f"Renamed profile '{args.old_name}' to '{args.new_name}' at {new_path}")
+
+    old_secrets = secrets_path(args.old_name)
+    if old_secrets.is_file():
+        new_secrets = secrets_path(args.new_name)
+        new_secrets.parent.mkdir(parents=True, exist_ok=True)
+        old_secrets.rename(new_secrets)
+        print(f"Moved secrets to {new_secrets}")
+
+
 def main():
     argv, command = split_command(sys.argv[1:])
     args = parse_args(argv)
     args.command = command
     {
-        "mk": cmd_mk,
+        "create": cmd_create,
         "mod": cmd_mod,
         "ls": cmd_ls,
         "get": cmd_get,
         "rm": cmd_rm,
+        "mv": cmd_mv,
     }[args.subcommand](args)
 
 
