@@ -129,15 +129,37 @@ auto_commit_tree() {
             auto_branch="AUTOCOMMIT/$branch"
         fi
 
-        if git -C "$repo_dir" show-ref --verify --quiet "refs/heads/$auto_branch"; then
-            git -C "$repo_dir" checkout "$auto_branch"
-        else
-            git -C "$repo_dir" checkout -b "$auto_branch"
-        fi
-
         log "Auto-committing uncommitted changes in $repo_dir on $auto_branch..."
+
+        # Not `git checkout "$auto_branch"` (or -b) followed by `git
+        # commit` -- across enough runs $auto_branch's last snapshot and
+        # the current dirty tree inevitably disagree on some file (the real
+        # branch moved, or was edited again since), and checking out a
+        # branch whose committed content differs from an uncommitted local
+        # change is exactly what `git checkout` correctly refuses to do
+        # ("would be overwritten by checkout"). Build the commit via
+        # plumbing instead, parented on $auto_branch's current tip if it
+        # already exists (else HEAD) so it stays one growing chain of
+        # snapshots same as before: `write-tree` snapshots the current
+        # index (right after `add -A`, that's exactly the working tree),
+        # so by construction the new commit's tree already equals the
+        # working tree -- `update-ref` moves $auto_branch onto it without
+        # touching the working tree at all, and the checkout at the end is
+        # then always a genuine no-op, never a conflicting one.
         git -C "$repo_dir" add -A
-        git -C "$repo_dir" commit -q -s --no-verify -m "run-remote auto-commit"
+        local tree parent sign_off commit_sha
+        tree="$(git -C "$repo_dir" write-tree)"
+        if git -C "$repo_dir" show-ref --verify --quiet "refs/heads/$auto_branch"; then
+            parent="$(git -C "$repo_dir" rev-parse "refs/heads/$auto_branch")"
+        else
+            parent="$(git -C "$repo_dir" rev-parse HEAD)"
+        fi
+        # commit-tree has no -s; build the same trailer `commit -s` would.
+        sign_off="Signed-off-by: $(git -C "$repo_dir" var GIT_COMMITTER_IDENT | sed 's/ [0-9]* [-+][0-9]*$//')"
+        commit_sha="$(git -C "$repo_dir" commit-tree "$tree" -p "$parent" \
+            -m "$(printf 'run-remote auto-commit\n\n%s' "$sign_off")")"
+        git -C "$repo_dir" update-ref "refs/heads/$auto_branch" "$commit_sha"
+        git -C "$repo_dir" checkout "$auto_branch"
     fi
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
