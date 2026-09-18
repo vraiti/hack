@@ -1,0 +1,17 @@
+venv:
+- envvar: VLLM_OMNI_VERSION_OVERRIDE=0.0.0
+- python: 3.12
+- package: vllm==0.29.0
+- package: setuptools_scm
+- package-script: vllm-omni-aux/utils/install-flashinfer-jit-cache.sh
+- package: -e vllm-omni[dev] --no-build-isolation
+sync:
+  vllm: site-package
+  vllm-omni: default
+  vllm-omni-aux: default
+command:
+- vllm-omni-aux/utils/pytest.sh
+- -v 
+- tests/entrypoints/openai_api/test_qwen3_omni_realtime_websocket.py 
+- -k 
+- livekit_client_vad_replay
